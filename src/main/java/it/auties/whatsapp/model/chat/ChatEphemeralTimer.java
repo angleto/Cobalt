@@ -49,10 +49,17 @@ public enum ChatEphemeralTimer implements ProtobufMessage {
      * @param value the value to use for creating the ChatEphemeralTimer
      * @return the ChatEphemeralTimer instance that matches the specified value
      */
-    @JsonCreator
     public static ChatEphemeralTimer of(long value) {
         return Arrays.stream(values())
                 .filter(entry -> entry.period().toSeconds() == value || entry.period().toDays() == value)
+                .findFirst()
+                .orElse(OFF);
+    }
+
+    @JsonCreator
+    public static ChatEphemeralTimer of(String value) {
+        return Arrays.stream(values())
+                .filter(entry -> entry.name().equals(value))
                 .findFirst()
                 .orElse(OFF);
     }

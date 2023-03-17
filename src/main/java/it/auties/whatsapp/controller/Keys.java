@@ -20,8 +20,11 @@ import it.auties.whatsapp.model.sync.LTHashState;
 import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.KeyHelper;
 import it.auties.whatsapp.util.Specification.Whatsapp;
-import lombok.*;
+import lombok.AccessLevel;
 import lombok.Builder.Default;
+import lombok.Getter;
+import lombok.NonNull;
+import lombok.Setter;
 import lombok.experimental.Accessors;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.jackson.Jacksonized;
@@ -136,7 +139,7 @@ public final class Keys extends Controller<Keys> {
      */
     @NonNull
     @Default
-    private Map<SenderKeyName, SenderKeyRecord> senderKeys = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<SenderKeyName, SenderKeyRecord> senderKeys = new ConcurrentHashMap<>();
 
     /**
      * App state keys
@@ -150,14 +153,14 @@ public final class Keys extends Controller<Keys> {
      */
     @NonNull
     @Default
-    private Map<SessionAddress, Session> sessions = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<SessionAddress, Session> sessions = new ConcurrentHashMap<>();
 
     /**
      * Hash state
      */
     @NonNull
     @Default
-    private Map<PatchType, LTHashState> hashStates = new ConcurrentHashMap<>();
+    private ConcurrentHashMap<PatchType, LTHashState> hashStates = new ConcurrentHashMap<>();
 
 
     /**
