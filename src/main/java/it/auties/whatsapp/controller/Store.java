@@ -47,12 +47,6 @@ import java.util.stream.Stream;
 @SuppressWarnings({"unused", "UnusedReturnValue"})
 public final class Store extends Controller<Store> {
     /**
-     * The registration id of this store
-     */
-    @Getter
-    private int registrationId;
-
-    /**
      * The locale of the user linked to this account. This field will be null while the user hasn't
      * logged in yet. Assumed to be non-null otherwise.
      */
