@@ -103,7 +103,7 @@
         <caffeine.version>3.1.5</caffeine.version>
         <lazysodium.version>5.1.4</lazysodium.version>
         <linkpreview.version>2.1</linkpreview.version>
-        <vcard.version>0.12.0</vcard.version>
+        <vcard.version>0.11.3</vcard.version>
         <qr.terminal.version>2.2</qr.terminal.version>
         <libphonenumber.version>8.13.7</libphonenumber.version>
         <pdfbox.version>2.0.27</pdfbox.version>
