@@ -30,6 +30,7 @@ import lombok.experimental.SuperBuilder;
 import lombok.extern.jackson.Jacksonized;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static java.util.Objects.requireNonNullElseGet;
@@ -131,7 +132,7 @@ public final class Keys extends Controller<Keys> {
      */
     @NonNull
     @Default
-    private Map<SenderKeyName, SenderKeyRecord> senderKeys = new HashMap<>();
+    private Map<SenderKeyName, SenderKeyRecord> senderKeys = new ConcurrentHashMap<>();
 
     /**
      * App state keys
@@ -145,14 +146,14 @@ public final class Keys extends Controller<Keys> {
      */
     @NonNull
     @Default
-    private Map<SessionAddress, Session> sessions = new HashMap<>();
+    private Map<SessionAddress, Session> sessions = new ConcurrentHashMap<>();
 
     /**
      * Hash state
      */
     @NonNull
     @Default
-    private Map<PatchType, LTHashState> hashStates = new HashMap<>();
+    private Map<PatchType, LTHashState> hashStates = new ConcurrentHashMap<>();
 
 
     /**
