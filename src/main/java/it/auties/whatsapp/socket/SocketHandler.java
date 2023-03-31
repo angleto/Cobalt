@@ -178,12 +178,12 @@ public class SocketHandler implements SocketListener {
 
     @Override
     public void onClose() {
-        if (state == SocketState.DISCONNECTED) {
-            disconnect(DisconnectReason.DISCONNECTED);
+        if (state == SocketState.CONNECTED) {
+            disconnect(DisconnectReason.RECONNECTING);
             return;
         }
         onDisconnected(state.toReason());
-        onShutdown(state == SocketState.DISCONNECTED);
+        onShutdown(state == SocketState.RECONNECTING);
     }
 
     @Override
