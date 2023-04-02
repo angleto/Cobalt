@@ -1101,7 +1101,7 @@ public class Whatsapp {
         var key = MessageKey.builder()
                 .chatJid(message.chat().jid())
                 .senderJid(message.senderJid())
-                .fromMe(Objects.equals(message.senderJid().toUserJid(), store().userCompanionJid().toUserJid()))
+                .fromMe(Objects.equals(message.senderJid().toWhatsappJid(), store().userCompanionJid().toWhatsappJid()))
                 .id(message.id())
                 .build();
         var reactionMessage = ReactionMessage.builder()
@@ -1157,8 +1157,8 @@ public class Whatsapp {
     }
 
     private void attributeMessageMetadata(MessageInfo info) {
-        info.key().chatJid(info.chatJid().toUserJid());
-        info.key().senderJid(info.senderJid() == null ? null : info.senderJid().toUserJid());
+        info.key().chatJid(info.chatJid().toWhatsappJid());
+        info.key().senderJid(info.senderJid() == null ? null : info.senderJid().toWhatsappJid());
         fixEphemeralMessage(info);
         switch (info.message().content()) {
             case TextMessage textMessage -> attributeTextMessage(textMessage);
@@ -1262,15 +1262,15 @@ public class Whatsapp {
         }
         var iv = ofRandom(12).toByteArray();
         var additionalData = "%s\0%s".formatted(pollUpdateMessage.pollCreationMessageKey()
-                .id(), store().userCompanionJid().toUserJid());
+                .id(), store().userCompanionJid().toWhatsappJid());
         var encryptedOptions = pollUpdateMessage.votes().stream().map(entry -> Sha256.calculate(entry.name())).toList();
         var pollUpdateEncryptedOptions = Protobuf.writeMessage(PollUpdateEncryptedOptions.of(encryptedOptions));
         var originalPollInfo = socketHandler.store()
                 .findMessageByKey(pollUpdateMessage.pollCreationMessageKey())
                 .orElseThrow(() -> new NoSuchElementException("Missing original poll message"));
         var originalPollMessage = (PollCreationMessage) originalPollInfo.message().content();
-        var originalPollSender = originalPollInfo.senderJid().toUserJid().toString().getBytes(StandardCharsets.UTF_8);
-        var modificationSenderJid = info.senderJid().toUserJid();
+        var originalPollSender = originalPollInfo.senderJid().toWhatsappJid().toString().getBytes(StandardCharsets.UTF_8);
+        var modificationSenderJid = info.senderJid().toWhatsappJid();
         pollUpdateMessage.voter(modificationSenderJid);
         var modificationSender = modificationSenderJid.toString().getBytes(StandardCharsets.UTF_8);
         var secretName = pollUpdateMessage.secretName().getBytes(StandardCharsets.UTF_8);
@@ -1307,9 +1307,6 @@ public class Whatsapp {
                     && interactiveMessage.header().get().attachment().get() instanceof MediaMessage mediaMessage -> attributeMediaMessage(mediaMessage);
             default -> {}
         }
-
-        // Credit to Baileys: https://github.com/adiwajshing/Baileys/blob/f0bdb12e56cea8b0bfbb0dff37c01690274e3e31/src/Utils/messages.ts#L781
-        info.message(info.message().toViewOnce());
     }
 
     // This is not needed probably, but Whatsapp uses a text message by default, so maybe it makes sense
@@ -1649,14 +1646,14 @@ public class Whatsapp {
     public CompletableFuture<Boolean> changePresence(boolean available) {
         checkLoggedIn();
         var presence = available ? ContactStatus.AVAILABLE : ContactStatus.UNAVAILABLE;
-        var node = Node.ofAttributes("presence", Map.of("type", presence.data()));
+        var node = Node.ofAttributes("presence", Map.of("type", presence.data(), "name", store().userCompanionName()));
         return socketHandler.sendWithNoResponse(node)
                 .thenAcceptAsync(socketHandler -> updateSelfPresence(null, presence))
                 .thenApplyAsync(ignored -> available);
     }
 
     private void updateSelfPresence(ContactJidProvider chatJid, ContactStatus presence) {
-        var self = store().findContactByJid(store().userCompanionJid().toUserJid());
+        var self = store().findContactByJid(store().userCompanionJid().toWhatsappJid());
         if (self.isEmpty()) {
             return;
         }
@@ -1678,7 +1675,14 @@ public class Whatsapp {
      */
     public <T extends ContactJidProvider> CompletableFuture<T> changePresence(@NonNull T chat, @NonNull ContactStatus presence) {
         checkLoggedIn();
-        var node = Node.ofAttributes("presence", Map.of("to", chat.toJid(), "type", presence.data()));
+        if(presence == ContactStatus.COMPOSING || presence == ContactStatus.RECORDING){
+            var node = Node.ofChildren("chatstate", Map.of("to", chat.toJid()), Node.of(presence.data()));
+            return socketHandler.sendWithNoResponse(node)
+                    .thenAcceptAsync(socketHandler -> updateSelfPresence(chat, presence))
+                    .thenApplyAsync(ignored -> chat);
+        }
+
+        var node = Node.ofAttributes("presence", Map.of("to", chat.toJid(), "type", presence.data(), "name", store().userCompanionName()));
         return socketHandler.sendWithNoResponse(node)
                 .thenAcceptAsync(socketHandler -> updateSelfPresence(chat, presence))
                 .thenApplyAsync(ignored -> chat);
@@ -1707,7 +1711,7 @@ public class Whatsapp {
     }
 
     private ContactJid checkGroupParticipantJid(ContactJid jid, String errorMessage) {
-        if (Objects.equals(jid.toUserJid(), store().userCompanionJid().toUserJid())) {
+        if (Objects.equals(jid.toWhatsappJid(), store().userCompanionJid().toWhatsappJid())) {
             throw new IllegalArgumentException(errorMessage);
         }
 
@@ -1858,7 +1862,7 @@ public class Whatsapp {
         checkLoggedIn();
         var profilePic = image != null ? Medias.getProfilePic(image) : null;
         var body = Node.of("picture", Map.of("type", "image"), profilePic);
-        return socketHandler.sendQuery(group.toJid().toUserJid(), "set", "w:profile:picture", body)
+        return socketHandler.sendQuery(group.toJid().toWhatsappJid(), "set", "w:profile:picture", body)
                 .thenApplyAsync(ignored -> group);
     }
 
@@ -2282,8 +2286,7 @@ public class Whatsapp {
         var range = createRange(chat.toJid(), true);
         var clearChatAction = ClearChatAction.of(range);
         var syncAction = ActionValueSync.of(clearChatAction);
-        var request = PatchRequest.of(REGULAR_HIGH, syncAction, SET, 6, chat.toJid()
-                .toString(), booleanToInt(keepStarredMessages), "0");
+        var request = PatchRequest.of(REGULAR_HIGH, syncAction, SET, 6, chat.toJid().toString(), booleanToInt(keepStarredMessages), "0");
         return socketHandler.pushPatch(request).thenApplyAsync(ignored -> chat);
     }
 
@@ -2394,7 +2397,7 @@ public class Whatsapp {
      * @return a CompletableFuture
      */
     public CompletableFuture<List<BusinessCatalogEntry>> queryBusinessCatalog(int productsLimit) {
-        return queryBusinessCatalog(store().userCompanionJid().toUserJid(), productsLimit);
+        return queryBusinessCatalog(store().userCompanionJid().toWhatsappJid(), productsLimit);
     }
 
     /**
@@ -2447,7 +2450,7 @@ public class Whatsapp {
      * @return a CompletableFuture
      */
     public CompletableFuture<?> queryBusinessCollections(int collectionsLimit) {
-        return queryBusinessCollections(store().userCompanionJid().toUserJid(), collectionsLimit);
+        return queryBusinessCollections(store().userCompanionJid().toWhatsappJid(), collectionsLimit);
     }
 
     /**
@@ -2536,7 +2539,7 @@ public class Whatsapp {
                 .toMap();
         var node = Node.ofChildren("receipt", Map.of("id", info.key().id(), "to", socketHandler.store()
                 .userCompanionJid()
-                .toUserJid(), "type", "server-error"), Node.ofChildren("encrypt", Node.of("enc_p", ciphertext), Node.of("enc_iv", retryIv)), Node.ofAttributes("rmr", rmrAttributes));
+                .toWhatsappJid(), "type", "server-error"), Node.ofChildren("encrypt", Node.of("enc_p", ciphertext), Node.of("enc_iv", retryIv)), Node.ofAttributes("rmr", rmrAttributes));
         return socketHandler.send(node, result -> result.hasDescription("notification"))
                 .thenApplyAsync(result -> parseMediaReupload(info, mediaMessage, retryKey, retryIdData, result));
     }

@@ -25,6 +25,7 @@ open module it.auties.whatsappweb4j {
     requires libphonenumber;
     requires org.apache.pdfbox;
     requires org.apache.poi.ooxml;
+    requires org.apache.poi.scratchpad;
 
     exports it.auties.whatsapp.api;
     exports it.auties.whatsapp.controller;
@@ -51,4 +52,5 @@ open module it.auties.whatsappweb4j {
     exports it.auties.whatsapp.model.location;
     exports it.auties.whatsapp.model.poll;
     exports it.auties.whatsapp.model.mobile;
+    exports it.auties.whatsapp.model.interactive;
 }

@@ -14,7 +14,7 @@ import it.auties.whatsapp.model.location.InteractiveLocationAnnotation;
 import it.auties.whatsapp.model.message.button.ButtonsMessageHeader;
 import it.auties.whatsapp.model.message.model.MediaMessage;
 import it.auties.whatsapp.model.message.model.MediaMessageType;
-import it.auties.whatsapp.model.product.ProductHeaderAttachment;
+import it.auties.whatsapp.model.interactive.InteractiveHeaderAttachment;
 import it.auties.whatsapp.util.Clock;
 import it.auties.whatsapp.util.Medias;
 import it.auties.whatsapp.util.Validate;
@@ -41,7 +41,7 @@ import static java.util.Objects.requireNonNullElse;
 @SuperBuilder
 @Jacksonized
 @Accessors(fluent = true)
-public final class VideoMessage extends MediaMessage implements ProductHeaderAttachment, ButtonsMessageHeader, FourRowTemplateTitle, HydratedFourRowTemplateTitle {
+public final class VideoMessage extends MediaMessage implements InteractiveHeaderAttachment, ButtonsMessageHeader, FourRowTemplateTitle, HydratedFourRowTemplateTitle {
     /**
      * The upload url of the encoded video that this object wraps
      */
@@ -182,7 +182,7 @@ public final class VideoMessage extends MediaMessage implements ProductHeaderAtt
     @Builder(builderClassName = "SimpleVideoMessageBuilder", builderMethodName = "simpleVideoBuilder")
     private static VideoMessage videoBuilder(byte[] media, String mimeType, String caption, byte[] thumbnail, ContextInfo contextInfo) {
         var dimensions = Medias.getDimensions(media, true);
-        var duration = Medias.getDuration(media, true);
+        var duration = Medias.getDuration(media);
         return VideoMessage.builder()
                 .decodedMedia(media)
                 .mediaKeyTimestamp(Clock.nowSeconds())
@@ -217,7 +217,7 @@ public final class VideoMessage extends MediaMessage implements ProductHeaderAtt
     private static VideoMessage gifBuilder(byte[] media, String mimeType, String caption, VideoMessageAttribution gifAttribution, byte[] thumbnail, ContextInfo contextInfo) {
         Validate.isTrue(isNotGif(media, mimeType), "Cannot create a VideoMessage with mime type image/gif: gif messages on whatsapp are videos played as gifs");
         var dimensions = Medias.getDimensions(media, true);
-        var duration = Medias.getDuration(media, true);
+        var duration = Medias.getDuration(media);
         return VideoMessage.builder()
                 .decodedMedia(media)
                 .mediaKeyTimestamp(Clock.nowSeconds())
