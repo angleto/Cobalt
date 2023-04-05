@@ -137,7 +137,7 @@ public abstract sealed class SocketSession permits WebSocketSession, AppSocketSe
         }
 
         @OnClose
-        public void onClose(Session session, CloseReason closeReason) {
+        public void onClose() {
             listener.onClose();
         }
 
