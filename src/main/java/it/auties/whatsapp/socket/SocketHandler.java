@@ -1,10 +1,7 @@
 package it.auties.whatsapp.socket;
 
-import it.auties.whatsapp.api.DisconnectReason;
+import it.auties.whatsapp.api.*;
 import it.auties.whatsapp.api.ErrorHandler.Location;
-import it.auties.whatsapp.api.SocketEvent;
-import it.auties.whatsapp.api.Whatsapp;
-import it.auties.whatsapp.api.WhatsappOptions;
 import it.auties.whatsapp.api.WhatsappOptions.MobileOptions;
 import it.auties.whatsapp.binary.Decoder;
 import it.auties.whatsapp.binary.PatchType;
@@ -231,24 +228,32 @@ public class SocketHandler implements SocketListener {
         keys.clearReadWriteKey();
         return switch (reason) {
             case DISCONNECTED -> {
+                if(session != null) {
                     session.close();
+                }
                 yield CompletableFuture.completedFuture(null);
             }
             case RECONNECTING -> {
+                if(session != null) {
                     session.close();
+                }
                 yield connect();
             }
             case LOGGED_OUT -> {
                 deleteCurrentSession();
                 store.resolveAllPendingRequests();
+                if(session != null) {
                     session.close();
+                }
                 yield CompletableFuture.completedFuture(null);
             }
             case RESTORE -> {
                 deleteCurrentSession();
                 store.resolveAllPendingRequests();
                 var oldListeners = new ArrayList<>(store.listeners());
+                if(session != null) {
                     session.close();
+                }
                 options.uuid(UUID.randomUUID());
                 this.keys = Keys.random(options);
                 this.store = Store.random(options);

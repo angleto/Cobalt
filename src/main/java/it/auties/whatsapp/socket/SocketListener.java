@@ -1,9 +1,5 @@
 package it.auties.whatsapp.socket;
 
-import jakarta.websocket.CloseReason;
-
-import java.util.Optional;
-
 public interface SocketListener {
     void onOpen(SocketSession session);
 
