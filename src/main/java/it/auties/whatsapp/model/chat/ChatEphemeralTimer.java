@@ -58,7 +58,7 @@ public enum ChatEphemeralTimer implements ProtobufMessage {
     }
 
     @ProtobufConverter
-    public int periodSeconds() {
-        return (int) period.toSeconds();
+    public long periodSeconds() {
+        return period.toSeconds();
     }
 }
