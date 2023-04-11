@@ -29,7 +29,10 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static it.auties.whatsapp.api.ErrorHandler.Location.*;
+import static it.auties.whatsapp.model.request.Node.ofChildren;
 import static java.lang.System.Logger.Level.WARNING;
+import static java.util.Map.of;
+import static java.util.concurrent.CompletableFuture.completedFuture;
 
 class AppStateHandler {
     public static final int TIMEOUT = 120;
