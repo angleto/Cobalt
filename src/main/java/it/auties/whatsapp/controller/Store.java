@@ -125,7 +125,7 @@ public final class Store extends Controller<Store> {
     @Getter
     @Setter
     private ConcurrentHashMap<String, String> properties = new ConcurrentHashMap<>();
-
+    
     /**
      * The non-null map of chats
      */
@@ -686,7 +686,7 @@ public final class Store extends Controller<Store> {
         findMessageByKey(reactionMessage.key())
                 .ifPresent(message -> message.reactions().add(reactionMessage));
     }
-
+    
     /**
      * Returns the chats pinned to the top sorted new to old
      *
