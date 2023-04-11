@@ -678,7 +678,7 @@ class MessageHandler {
     private CompletableFuture<HistorySync> downloadHistorySync(ProtocolMessage protocolMessage) {
         return Medias.download(protocolMessage.historySyncNotification())
                 .thenApplyAsync(entry -> entry.orElseThrow(() -> new NoSuchElementException("Cannot download history sync")))
-                .thenApplyAsync(result -> Protobuf.readMessage(BytesHelper.deflate(result), HistorySync.class));
+                .thenApplyAsync(result -> Protobuf.readMessage(BytesHelper.decompress(result), HistorySync.class));
     }
 
     private void onHistoryNotification(MessageInfo info, HistorySync history) {
