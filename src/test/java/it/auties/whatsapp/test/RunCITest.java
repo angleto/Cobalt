@@ -112,10 +112,10 @@ public class RunCITest implements Listener {
         api.addListener(this);
     }
 
-    private CompletableFuture<String> onScanCode(VerificationCodeResponse type) {
+    private String onScanCode(VerificationCodeResponse type) {
         System.out.println("Enter OTP: ");
         var scanner = new Scanner(System.in);
-        return CompletableFuture.completedFuture(scanner.nextLine().trim());
+        return scanner.nextLine().trim();
     }
 
     @SneakyThrows
@@ -237,7 +237,7 @@ public class RunCITest implements Listener {
             return;
         }
         log("Querying %s's status...", contact);
-        api.queryAbout(contact)
+        api.queryStatus(contact)
                 .join()
                 .ifPresentOrElse(status -> log("Queried %s", status), () -> log("%s doesn't have a status", contact));
     }

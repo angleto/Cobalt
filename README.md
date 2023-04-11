@@ -743,6 +743,7 @@ These are the allowed values:
 - UNAVAILABLE
 - COMPOSING
 - RECORDING
+- PAUSED
 
 Then, execute this method:
 
