@@ -8,6 +8,7 @@ import lombok.SneakyThrows;
 import lombok.experimental.UtilityClass;
 
 import java.io.ByteArrayOutputStream;
+import java.util.zip.Deflater;
 import java.util.zip.Inflater;
 
 import static it.auties.whatsapp.util.Spec.Signal.CURRENT_VERSION;

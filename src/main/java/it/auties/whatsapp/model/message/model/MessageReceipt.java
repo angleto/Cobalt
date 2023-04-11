@@ -77,7 +77,7 @@ public class MessageReceipt implements ProtobufMessage {
      * @return a non-null optional
      */
     public Optional<ZonedDateTime> deliveredTimestamp() {
-        return Clock.parseSeconds(deliveredTimestamp);
+        return Clock.parseSeconds(deliveredTimestampSeconds);
     }
 
     /**
@@ -86,7 +86,7 @@ public class MessageReceipt implements ProtobufMessage {
      * @return a non-null optional
      */
     public Optional<ZonedDateTime> readTimestamp() {
-        return Clock.parseSeconds(readTimestamp);
+        return Clock.parseSeconds(readTimestampSeconds);
     }
 
     /**
@@ -95,37 +95,37 @@ public class MessageReceipt implements ProtobufMessage {
      * @return a non-null optional
      */
     public Optional<ZonedDateTime> playedTimestamp() {
-        return Clock.parseSeconds(playedTimestamp);
+        return Clock.parseSeconds(playedTimestampSeconds);
     }
 
     /**
      * Sets the read timestamp
      *
-     * @param readTimestamp the timestamp
+     * @param readTimestampSeconds the timestamp
      * @return the same instance
      */
-    public MessageReceipt readTimestamp(long readTimestamp) {
-        if (deliveredTimestamp == null) {
-            this.deliveredTimestamp = readTimestamp;
+    public MessageReceipt readTimestampSeconds(long readTimestampSeconds) {
+        if (deliveredTimestampSeconds == null) {
+            this.deliveredTimestampSeconds = readTimestampSeconds;
         }
-        this.readTimestamp = readTimestamp;
+        this.readTimestampSeconds = readTimestampSeconds;
         return this;
     }
 
     /**
      * Sets the played timestamp
      *
-     * @param playedTimestamp the timestamp
+     * @param playedTimestampSeconds the timestamp
      * @return the same instance
      */
-    public MessageReceipt playedTimestamp(long playedTimestamp) {
-        if (deliveredTimestamp == null) {
-            this.deliveredTimestamp = playedTimestamp;
+    public MessageReceipt playedTimestampSeconds(long playedTimestampSeconds) {
+        if (deliveredTimestampSeconds == null) {
+            this.deliveredTimestampSeconds = playedTimestampSeconds;
         }
-        if (readTimestamp == null) {
-            this.readTimestamp = playedTimestamp;
+        if (readTimestampSeconds == null) {
+            this.readTimestampSeconds = playedTimestampSeconds;
         }
-        this.playedTimestamp = playedTimestamp;
+        this.playedTimestampSeconds = playedTimestampSeconds;
         return this;
     }
 }

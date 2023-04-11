@@ -84,7 +84,24 @@ public abstract sealed class MediaMessage extends ContextualMessage implements A
     public abstract long mediaKeyTimestamp();
 
     @Override
-    public String mediaName() {
-        return mediaType().keyName();
+    public MessageCategory category() {
+        return MessageCategory.MEDIA;
+    }
+
+    /**
+     * Returns the media type of the media that this object wraps
+     *
+     * @return a non-null {@link MediaMessageType}
+     */
+    public abstract MediaMessageType mediaType();
+
+    @Override
+    public MessageType type() {
+        return mediaType().toMessageType();
+    }
+
+    @Override
+    public AttachmentType attachmentType() {
+        return mediaType().toAttachmentType();
     }
 }

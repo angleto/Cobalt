@@ -60,7 +60,7 @@ public class MessageKey implements ProtobufMessage {
     /**
      * The jid of the sender
      */
-    @ProtobufProperty(index = 4, type = STRING, implementation = ContactJid.class)
+    @ProtobufProperty(index = 4, type = STRING)
     private ContactJid senderJid;
 
     /**

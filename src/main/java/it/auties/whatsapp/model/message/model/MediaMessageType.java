@@ -32,7 +32,7 @@ public enum MediaMessageType implements ProtobufMessage {
     /**
      * The message is a sticker
      */
-    STICKER("image/webp", MessageType.STICKER);
+    STICKER("image/webp", MessageType.STICKER, AttachmentType.IMAGE);
 
     /**
      * The default mime type for this enumerated type. Might be right, might be wrong, who knows.
@@ -43,40 +43,28 @@ public enum MediaMessageType implements ProtobufMessage {
     /**
      * The message type for this media
      */
-    @Getter
     private final MessageType messageType;
 
     /**
-     * Returns the path for an encrypted url
-     *
-     * @return a non-null string
+     * The attachment type for this media
      */
-    public String path() {
-        return this == STICKER ? IMAGE.path() : "mms/%s".formatted(this.name().toLowerCase());
+    private final AttachmentType attachmentType;
+
+    /**
+     * The message type for this media
+     *
+     * @return a message type
+     */
+    public MessageType toMessageType(){
+        return messageType;
     }
 
     /**
-     * Returns the default extension of this media type
+     * The attachment type for this media
      *
-     * @return a non-null string
+     * @return an attachment type
      */
-    public String fileExtension() {
-        return switch (this) {
-            case IMAGE -> "jpg";
-            case DOCUMENT -> "";
-            case AUDIO -> "mpeg";
-            case VIDEO -> "mp4";
-            case STICKER -> "webp";
-        };
-    }
-
-    /**
-     * Returns the path for an encrypted url
-     *
-     * @return a non-null string
-     */
-    public String keyName() {
-        var name = (this == STICKER ? IMAGE : this).name().toLowerCase();
-        return "WhatsApp %s Keys".formatted(Character.toUpperCase(name.charAt(0)) + name.substring(1));
+    public AttachmentType toAttachmentType(){
+        return attachmentType;
     }
 }

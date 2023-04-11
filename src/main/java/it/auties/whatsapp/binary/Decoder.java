@@ -132,7 +132,7 @@ public class Decoder {
         var agent = buffer.readUnsignedByte();
         var device = buffer.readUnsignedByte();
         var user = readString();
-        return ContactJid.ofCompanion(user, device, agent);
+        return ContactJid.ofDevice(user, device, agent);
     }
 
     private int readSize(int token) {
