@@ -24,12 +24,12 @@ public final class PrimaryVersionAction implements Action {
     private String version;
 
     /**
-     * The name of this action
+     * Always throws an exception as this action cannot be serialized
      *
-     * @return a non-null string
+     * @return an exception
      */
     @Override
     public String indexName() {
-        return "primary_version";
+        throw new UnsupportedOperationException("Cannot send action: no index name");
     }
 }

@@ -24,12 +24,12 @@ public final class TimeFormatAction implements Action {
     private boolean twentyFourHourFormatEnabled;
 
     /**
-     * The name of this action
+     * Always throws an exception as this action cannot be serialized
      *
-     * @return a non-null string
+     * @return an exception
      */
     @Override
     public String indexName() {
-        return "time_format";
+        throw new UnsupportedOperationException("Cannot send action: no index name");
     }
 }
