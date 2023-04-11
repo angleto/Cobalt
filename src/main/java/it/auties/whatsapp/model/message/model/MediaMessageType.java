@@ -1,6 +1,7 @@
 package it.auties.whatsapp.model.message.model;
 
 import it.auties.protobuf.base.ProtobufMessage;
+import it.auties.whatsapp.model.media.AttachmentType;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.experimental.Accessors;
@@ -15,19 +16,19 @@ public enum MediaMessageType implements ProtobufMessage {
     /**
      * The message is an image
      */
-    IMAGE("image/jpeg", MessageType.IMAGE),
+    IMAGE("image/jpeg", MessageType.IMAGE, AttachmentType.IMAGE),
     /**
      * The message is a document
      */
-    DOCUMENT("application/octet-stream", MessageType.DOCUMENT),
+    DOCUMENT("application/octet-stream", MessageType.DOCUMENT, AttachmentType.DOCUMENT),
     /**
      * The message is an audio
      */
-    AUDIO("audio/mpeg", MessageType.AUDIO),
+    AUDIO("audio/mpeg", MessageType.AUDIO, AttachmentType.AUDIO),
     /**
      * The message is a video
      */
-    VIDEO("video/mp4", MessageType.VIDEO),
+    VIDEO("video/mp4", MessageType.VIDEO, AttachmentType.VIDEO),
     /**
      * The message is a sticker
      */

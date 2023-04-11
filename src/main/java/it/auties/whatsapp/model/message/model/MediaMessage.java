@@ -40,23 +40,6 @@ public abstract sealed class MediaMessage extends ContextualMessage implements A
      */
     private byte[] decodedMedia;
 
-    @Override
-    public MessageType type() {
-        return mediaType().messageType();
-    }
-
-    @Override
-    public MessageCategory category() {
-        return MessageCategory.MEDIA;
-    }
-
-    /**
-     * Returns the media type of the media that this object wraps
-     *
-     * @return a non-null {@link MediaMessageType}
-     */
-    public abstract MediaMessageType mediaType();
-
     /**
      * Saves this media to the provided path. Throws an error if the media cannot be downloaded
      * successfully.
