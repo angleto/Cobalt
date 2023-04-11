@@ -5,6 +5,7 @@ import it.auties.whatsapp.crypto.AesCbc;
 import it.auties.whatsapp.crypto.Hmac;
 import it.auties.whatsapp.crypto.Sha256;
 import it.auties.whatsapp.model.media.*;
+import it.auties.whatsapp.model.message.model.MediaMessageType;
 import it.auties.whatsapp.util.Spec.Whatsapp;
 import lombok.NonNull;
 import lombok.SneakyThrows;
@@ -42,67 +43,96 @@ import static java.net.http.HttpResponse.BodyHandlers.ofString;
 
 @UtilityClass
 public class Medias {
-    private final HttpClient CLIENT = HttpClient.newHttpClient();
+    public static final int THUMBNAIL_WIDTH = 480;
+    public static final int THUMBNAIL_HEIGHT = 339;
     private final int PROFILE_PIC_SIZE = 640;
-    private final String DEFAULT_HOST = "mmg.whatsapp.net";
+    private final String DEFAULT_HOST = "https://mmg.whatsapp.net";
     private final int THUMBNAIL_SIZE = 32;
     private final int RANDOM_FILE_NAME_LENGTH = 8;
     private final Map<String, Path> CACHE = new ConcurrentHashMap<>();
 
-    public byte[] getProfilePic(byte[] file) {
-        try {
-            try(var inputStream = new ByteArrayInputStream(file)) {
-                var inputImage = ImageIO.read(inputStream);
-                var scaledImage = inputImage.getScaledInstance(PROFILE_PIC_SIZE, PROFILE_PIC_SIZE, Image.SCALE_SMOOTH);
-                var outputImage = new BufferedImage(PROFILE_PIC_SIZE, PROFILE_PIC_SIZE, BufferedImage.TYPE_INT_RGB);
-                var graphics2D = outputImage.createGraphics();
-                graphics2D.drawImage(scaledImage, 0, 0, null);
-                graphics2D.dispose();
-                try (var outputStream = new ByteArrayOutputStream()) {
-                    ImageIO.write(outputImage, "jpg", outputStream);
-                    return outputStream.toByteArray();
-                }
-            }
-        } catch (Throwable exception) {
-            return file;
-        }
-    }
-
-    public Optional<byte[]> download(URI imageUri) {
+    public Optional<byte[]> getPreview(URI imageUri) {
         try {
             if (imageUri == null) {
                 return Optional.empty();
             }
             var bytes = imageUri.toURL().openConnection().getInputStream().readAllBytes();
-            return Optional.of(bytes);
+            return getImage(bytes, Format.JPG, -1);
         } catch (IOException exception) {
             return Optional.empty();
         }
     }
 
-    public CompletableFuture<MediaFile> upload(byte[] file, AttachmentType type, MediaConnection mediaConnection) {
+    private Optional<byte[]> getImage(byte[] file, Format format, int dimensions) {
+        try {
+            if (dimensions <= 0) {
+                return Optional.of(file);
+            }
+            var image = ImageIO.read(new ByteArrayInputStream(file));
+            if (image == null) {
+                return Optional.empty();
+            }
+            var resizedImage = getResizedImage(image, dimensions);
+            var outputStream = new ByteArrayOutputStream();
+            ImageIO.write(resizedImage, format.name().toLowerCase(), outputStream);
+            return Optional.of(outputStream.toByteArray());
+        } catch (IOException exception) {
+            return Optional.empty();
+        }
+    }
+
+    private BufferedImage getResizedImage(BufferedImage originalImage, int size) {
+        var type = originalImage.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : originalImage.getType();
+        var resizedImage = new BufferedImage(size, size, type);
+        var graphics = resizedImage.createGraphics();
+        graphics.drawImage(originalImage, 0, 0, size, size, null);
+        graphics.dispose();
+        graphics.setComposite(AlphaComposite.Src);
+        graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        return resizedImage;
+    }
+
+    public MediaFile upload(byte[] file, MediaMessageType type, MediaConnection mediaConnection) {
+        var client = HttpClient.newHttpClient();
         var auth = URLEncoder.encode(mediaConnection.auth(), StandardCharsets.UTF_8);
-        var uploadData = type.inflatable() ? BytesHelper.compress(file) : file;
-        var fileSha256 = Sha256.calculate(uploadData);
-        var keys = MediaKeys.random(type.keyName());
-        var encryptedMedia = AesCbc.encrypt(keys.iv(), uploadData, keys.cipherKey());
-        var hmac = calculateMac(encryptedMedia, keys);
-        var encrypted = Bytes.of(encryptedMedia).append(hmac).toByteArray();
-        var fileEncSha256 = Sha256.calculate(encrypted);
-        var token = Base64.getUrlEncoder().withoutPadding().encodeToString(fileEncSha256);
-        var uri = URI.create("https://%s/%s/%s?auth=%s&token=%s".formatted(DEFAULT_HOST, type.path(), token, auth, token));
-        var request = HttpRequest.newBuilder()
-                .POST(ofByteArray(encrypted))
-                .uri(uri)
-                .header("Content-Type", "application/octet-stream")
-                .header("Accept", "application/json")
-                .header("Origin", Whatsapp.WEB_ORIGIN)
-                .build();
-        return CLIENT.sendAsync(request, ofString()).thenApplyAsync(response -> {
+        var hosts = getHosts(mediaConnection);
+        return hosts.stream()
+                .map(host -> upload(file, type, client, auth, host))
+                .flatMap(Optional::stream)
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("Cannot upload media: no suitable host found: %s".formatted(hosts)));
+    }
+
+    private List<String> getHosts(MediaConnection mediaConnection) {
+        return Optional.ofNullable(mediaConnection).map(MediaConnection::hosts).orElse(List.of(DEFAULT_HOST));
+    }
+
+    private Optional<MediaFile> upload(byte[] file, MediaMessageType type, HttpClient client, String auth, String host) {
+        try {
+            var fileSha256 = Sha256.calculate(file);
+            var keys = MediaKeys.random(type.keyName());
+            var encryptedMedia = AesCbc.encrypt(keys.iv(), file, keys.cipherKey());
+            var hmac = calculateMac(encryptedMedia, keys);
+            var encrypted = Bytes.of(encryptedMedia).append(hmac).toByteArray();
+            var fileEncSha256 = Sha256.calculate(encrypted);
+            var token = Base64.getUrlEncoder().withoutPadding().encodeToString(fileEncSha256);
+            var uri = URI.create("https://%s/%s/%s?auth=%s&token=%s".formatted(host, type.path(), token, auth, token));
+            var request = HttpRequest.newBuilder()
+                    .POST(ofByteArray(encrypted))
+                    .uri(uri)
+                    .header("Content-Type", "application/octet-stream")
+                    .header("Accept", "application/json")
+                    .header("Origin", Whatsapp.WEB_ORIGIN)
+                    .build();
+            var response = client.send(request, ofString());
             Validate.isTrue(response.statusCode() == 200, "Invalid status countryCode: %s", response.statusCode());
             var upload = Json.readValue(response.body(), MediaUpload.class);
-            return new MediaFile(fileSha256, fileEncSha256, keys.mediaKey(), uploadData.length, upload.directPath(), upload.url());
-        });
+            return Optional.of(new MediaFile(fileSha256, fileEncSha256, keys.mediaKey(), file.length, upload.directPath(), upload.url()));
+        } catch (IOException | InterruptedException e) {
+            throw new RuntimeException(e);
+        }
     }
 
     private byte[] calculateMac(byte[] encryptedMedia, MediaKeys keys) {
@@ -114,19 +144,17 @@ public class Medias {
         try {
             Validate.isTrue(provider.mediaUrl() != null || provider.mediaDirectPath() != null, "Missing url and path from media");
             var url = Objects.requireNonNullElseGet(provider.mediaUrl(), () -> createMediaUrl(provider.mediaDirectPath()));
-            var request = HttpRequest.newBuilder()
-                    .uri(URI.create(url))
-                    .GET()
-                    .build();
-            return CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
+            var client = HttpClient.newHttpClient();
+            var request = HttpRequest.newBuilder().uri(URI.create(url)).GET().build();
+            return client.sendAsync(request, HttpResponse.BodyHandlers.ofByteArray())
                     .thenApplyAsync(response -> handleResponse(provider, response));
         } catch (Throwable error) {
-            return CompletableFuture.failedFuture(new RuntimeException("Cannot download media", error));
+            return CompletableFuture.failedFuture(error);
         }
     }
 
     public String createMediaUrl(@NonNull String directPath) {
-        return "https://%s%s".formatted(DEFAULT_HOST, directPath);
+        return DEFAULT_HOST + directPath;
     }
 
     private Optional<byte[]> handleResponse(AttachmentProvider provider, HttpResponse<byte[]> response) {
@@ -138,7 +166,7 @@ public class Medias {
         Validate.isTrue(Arrays.equals(sha256, provider.mediaEncryptedSha256()), "Cannot decode media: Invalid sha256 signature", SecurityException.class);
         var encryptedMedia = stream.cut(-10).toByteArray();
         var mediaMac = stream.slice(-10).toByteArray();
-        var keys = MediaKeys.of(provider.mediaKey(), provider.attachmentType().keyName());
+        var keys = MediaKeys.of(provider.mediaKey(), provider.mediaName());
         var hmac = calculateMac(encryptedMedia, keys);
         Validate.isTrue(Arrays.equals(hmac, mediaMac), "media_decryption", HmacValidationException.class);
         var decrypted = AesCbc.decrypt(keys.iv(), encryptedMedia, keys.cipherKey());
@@ -146,8 +174,7 @@ public class Medias {
     }
 
     public Optional<String> getMimeType(String name) {
-        return getExtension(name)
-                .map(extension -> Path.of("bogus%s".formatted(extension)))
+        return getExtension(name).map(extension -> Path.of("bogus%s".formatted(extension)))
                 .flatMap(Medias::getMimeType);
     }
 
@@ -267,49 +294,59 @@ public class Medias {
         return input;
     }
 
-    public Optional<byte[]> getThumbnail(byte[] file, String fileType){
-        return getThumbnail(file, Format.ofDocument(fileType));
-    }
-
     public Optional<byte[]> getThumbnail(byte[] file, Format format) {
         return switch (format) {
-            case UNKNOWN -> Optional.empty();
-            case JPG, PNG -> getImageThumbnail(file, format);
-            case PDF -> getPdfThumbnail(file);
-            case PPTX -> getPresentationThumbnail(file);
-            case VIDEO -> getVideoThumbnail(file);
+            case JPG, PNG -> getImage(file, format, THUMBNAIL_SIZE);
+            case VIDEO -> getVideo(file);
         };
     }
 
-    private Optional<byte[]> getImageThumbnail(byte[] file, Format format) {
-        try {
-            var image = ImageIO.read(new ByteArrayInputStream(file));
-            if (image == null) {
+    public Optional<byte[]> getThumbnail(byte[] file, String fileType){
+        return switch (fileType) {
+            case "pdf" -> getPdf(file);
+            case "pptx", "ppt" -> getPresentation(file);
+            default -> Optional.empty();
+        };
+    }
+
+    private Optional<byte[]> getPresentation(byte[] file) {
+        try (var ppt = new XMLSlideShow(new ByteArrayInputStream(file)); var outputStream = new ByteArrayOutputStream()) {
+            if(ppt.getSlides().isEmpty()){
                 return Optional.empty();
             }
-            var type = image.getType() == 0 ? BufferedImage.TYPE_INT_ARGB : image.getType();
-            var resizedImage = new BufferedImage(THUMBNAIL_SIZE, THUMBNAIL_SIZE, type);
-            var graphics = resizedImage.createGraphics();
-            graphics.drawImage(image, 0, 0, THUMBNAIL_SIZE, THUMBNAIL_SIZE, null);
-            graphics.dispose();
-            graphics.setComposite(AlphaComposite.Src);
-            graphics.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            graphics.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
-            graphics.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-            var outputStream = new ByteArrayOutputStream();
-            ImageIO.write(resizedImage, format.name().toLowerCase(), outputStream);
+            var thumb = new BufferedImage(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, BufferedImage.TYPE_INT_RGB);
+            var graphics2D = thumb.createGraphics();
+            graphics2D.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            ppt.getSlides().get(0).draw(graphics2D);
+            ImageIO.write(thumb, "jpg", outputStream);
             return Optional.of(outputStream.toByteArray());
-        } catch (IOException exception) {
+        }catch (Throwable throwable){
             return Optional.empty();
         }
     }
 
-    private Optional<byte[]> getVideoThumbnail(byte[] file) {
+    private Optional<byte[]> getPdf(byte[] file) {
+        try (var document = PDDocument.load(file); var outputStream = new ByteArrayOutputStream()) {
+            var renderer = new PDFRenderer(document);
+            var image = renderer.renderImage(0);
+            var thumb = new BufferedImage(THUMBNAIL_WIDTH, THUMBNAIL_HEIGHT, BufferedImage.TYPE_INT_RGB);
+            var graphics2D = thumb.createGraphics();
+            graphics2D.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+            graphics2D.drawImage(image, 0, 0, thumb.getWidth(), thumb.getHeight(), null);
+            graphics2D.dispose();
+            ImageIO.write(thumb, "jpg", outputStream);
+            return Optional.of(outputStream.toByteArray());
+        } catch (Throwable throwable) {
+            return Optional.empty();
+        }
+    }
+
+    private Optional<byte[]> getVideo(byte[] file) {
         var input = createTempFile(file, true);
         var output = createTempFile(file, false);
         try {
             var process = Runtime.getRuntime()
-                    .exec("ffmpeg -ss 00:00:00 -i %s -y -vf scale=%s:-1 -vframes 1 -f image2 %s".formatted(input, THUMBNAIL_SIZE, output));
+                    .exec("ffmpeg -ss 00:00:00 -i %s -y -vf scale=%s:-1 -vframes 1 -f image2 %s".formatted(input, Medias.THUMBNAIL_SIZE, output));
             if (process.waitFor() != 0) {
                 return Optional.empty();
             }
@@ -323,53 +360,29 @@ public class Medias {
         }
     }
 
-    private Optional<byte[]> getPdfThumbnail(byte[] file) {
-        try (var document = PDDocument.load(file); var outputStream = new ByteArrayOutputStream()) {
-            var renderer = new PDFRenderer(document);
-            var image = renderer.renderImage(0);
-            var thumb = new BufferedImage(Spec.Whatsapp.THUMBNAIL_WIDTH, Spec.Whatsapp.THUMBNAIL_HEIGHT, BufferedImage.TYPE_INT_RGB);
-            var graphics2D = thumb.createGraphics();
-            graphics2D.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            graphics2D.drawImage(image, 0, 0, thumb.getWidth(), thumb.getHeight(), null);
-            graphics2D.dispose();
-            ImageIO.write(thumb, "jpg", outputStream);
-            return Optional.of(outputStream.toByteArray());
-        } catch (Throwable throwable) {
-            return Optional.empty();
-        }
-    }
-
-    private Optional<byte[]> getPresentationThumbnail(byte[] file) {
-        try (var ppt = new XMLSlideShow(new ByteArrayInputStream(file)); var outputStream = new ByteArrayOutputStream()) {
-            if(ppt.getSlides().isEmpty()){
-                return Optional.empty();
+    public byte[] getProfilePic(byte[] file) {
+        try {
+            try(var inputStream = new ByteArrayInputStream(file)) {
+                var inputImage = ImageIO.read(inputStream);
+                var scaledImage = inputImage.getScaledInstance(PROFILE_PIC_SIZE, PROFILE_PIC_SIZE, Image.SCALE_SMOOTH);
+                var outputImage = new BufferedImage(PROFILE_PIC_SIZE, PROFILE_PIC_SIZE, BufferedImage.TYPE_INT_RGB);
+                var graphics2D = outputImage.createGraphics();
+                graphics2D.drawImage(scaledImage, 0, 0, null);
+                graphics2D.dispose();
+                try (var outputStream = new ByteArrayOutputStream()) {
+                    ImageIO.write(outputImage, "jpg", outputStream);
+                    return outputStream.toByteArray();
+                }
             }
-            var thumb = new BufferedImage(Spec.Whatsapp.THUMBNAIL_WIDTH, Spec.Whatsapp.THUMBNAIL_HEIGHT, BufferedImage.TYPE_INT_RGB);
-            var graphics2D = thumb.createGraphics();
-            graphics2D.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
-            ppt.getSlides().get(0).draw(graphics2D);
-            ImageIO.write(thumb, "jpg", outputStream);
-            return Optional.of(outputStream.toByteArray());
-        }catch (Throwable throwable){
-            return Optional.empty();
+        } catch (Throwable exception) {
+            return file;
         }
     }
 
     public enum Format {
-        UNKNOWN,
         PNG,
         JPG,
-        VIDEO,
-        PDF,
-        PPTX;
-
-        static Format ofDocument(String fileType){
-            return fileType == null ? UNKNOWN : switch (fileType.toLowerCase()){
-                case "pdf" -> PDF;
-                case "pptx", "ppt" -> PPTX;
-                default -> UNKNOWN;
-            };
-        }
+        VIDEO
     }
 
     private record FfprobeResult(List<MediaDimensions> streams) {
