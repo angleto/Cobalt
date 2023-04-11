@@ -7,7 +7,6 @@ import lombok.experimental.UtilityClass;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.UUID;
-import java.util.concurrent.ThreadLocalRandom;
 
 @UtilityClass
 public class KeyHelper {
@@ -81,17 +80,5 @@ public class KeyHelper {
     public int senderKeyId() {
         var secureRandom = SecureRandom.getInstance(SHA_PRNG);
         return secureRandom.nextInt(0, 2147483647);
-    }
-
-    public int agent(){
-        return ThreadLocalRandom.current().nextInt(1, 100);
-    }
-
-    public int keyIndex(){
-        return ThreadLocalRandom.current().nextInt(1, 10);
-    }
-
-    public byte[] appKeyId(){
-        return BytesHelper.intToBytes(ThreadLocalRandom.current().nextInt(1, 100), 6);
     }
 }

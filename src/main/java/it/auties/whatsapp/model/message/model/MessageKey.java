@@ -33,7 +33,7 @@ public class MessageKey implements ProtobufMessage {
     /**
      * The jid of the chat where the message was sent
      */
-    @ProtobufProperty(index = 1, type = STRING)
+    @ProtobufProperty(index = 1, type = STRING, implementation = ContactJid.class)
     @NonNull
     private ContactJid chatJid;
 
@@ -60,7 +60,7 @@ public class MessageKey implements ProtobufMessage {
     /**
      * The jid of the sender
      */
-    @ProtobufProperty(index = 4, type = STRING)
+    @ProtobufProperty(index = 4, type = STRING, implementation = ContactJid.class)
     private ContactJid senderJid;
 
     /**

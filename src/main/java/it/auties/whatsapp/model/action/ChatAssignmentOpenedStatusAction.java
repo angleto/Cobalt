@@ -27,12 +27,12 @@ public final class ChatAssignmentOpenedStatusAction implements Action {
     private boolean chatOpened;
 
     /**
-     * The name of this action
+     * Always throws an exception as this action cannot be serialized
      *
-     * @return a non-null string
+     * @return an exception
      */
     @Override
     public String indexName() {
-        return "agentChatAssignmentOpenedStatus";
+        throw new UnsupportedOperationException("Cannot send action: no index name");
     }
 }

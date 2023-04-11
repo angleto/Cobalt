@@ -37,7 +37,7 @@ public final class ContextInfo implements Info {
     /**
      * The jid of the contact that sent the message that this ContextualMessage quotes
      */
-    @ProtobufProperty(index = 2, type = STRING)
+    @ProtobufProperty(index = 2, type = STRING, implementation = ContactJid.class)
     @Setter(AccessLevel.NONE)
     private ContactJid quotedMessageSenderJid;
 
@@ -56,7 +56,7 @@ public final class ContextInfo implements Info {
     /**
      * The jid of the contact that sent the message that this ContextualMessage quotes
      */
-    @ProtobufProperty(index = 4, type = STRING)
+    @ProtobufProperty(index = 4, type = STRING, implementation = ContactJid.class)
     @Setter(AccessLevel.NONE)
     private ContactJid quotedMessageChatJid;
 
@@ -180,7 +180,7 @@ public final class ContextInfo implements Info {
     /**
      * Parent group
      */
-    @ProtobufProperty(index = 35, type = STRING)
+    @ProtobufProperty(index = 35, type = STRING, implementation = ContactJid.class)
     private ContactJid parentGroup;
 
     /**
