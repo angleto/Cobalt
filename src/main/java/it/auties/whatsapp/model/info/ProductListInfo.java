@@ -39,6 +39,6 @@ public final class ProductListInfo implements Info {
     /**
      * The jid of the seller of the products that this message wraps
      */
-    @ProtobufProperty(index = 3, type = STRING)
+    @ProtobufProperty(index = 3, type = STRING, implementation = ContactJid.class)
     private ContactJid seller;
 }
