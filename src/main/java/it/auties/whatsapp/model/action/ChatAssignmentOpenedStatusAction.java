@@ -33,6 +33,6 @@ public final class ChatAssignmentOpenedStatusAction implements Action {
      */
     @Override
     public String indexName() {
-        return "agentChatAssignmentOpenedStatus";
+        throw new UnsupportedOperationException("Cannot send action: no index name");
     }
 }
