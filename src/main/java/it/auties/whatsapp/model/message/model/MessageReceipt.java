@@ -34,19 +34,19 @@ public class MessageReceipt implements ProtobufMessage {
      * When the message was delivered(two ticks)
      */
     @ProtobufProperty(index = 2, type = INT64)
-    private Long deliveredTimestampSeconds;
+    private Long deliveredTimestamp;
 
     /**
      * When the message was read(two blue ticks)
      */
     @ProtobufProperty(index = 3, type = INT64)
-    private Long readTimestampSeconds;
+    private Long readTimestamp;
 
     /**
      * When the message was played(two blue ticks)
      */
     @ProtobufProperty(index = 4, type = INT64)
-    private Long playedTimestampSeconds;
+    private Long playedTimestamp;
 
     /**
      * A list of contacts who received the message(two ticks)
