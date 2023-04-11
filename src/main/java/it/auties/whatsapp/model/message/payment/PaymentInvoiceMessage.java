@@ -45,7 +45,7 @@ public final class PaymentInvoiceMessage extends MediaMessage implements Payment
      * The type of attachment that this invoice provides
      */
     @ProtobufProperty(index = 3, type = MESSAGE, implementation = PaymentInvoiceMessage.AttachmentType.class)
-    private AttachmentType paymentAttachmentType;
+    private AttachmentType attachmentType;
 
     /**
      * The mime type of the attachment that this invoice provides
@@ -121,7 +121,7 @@ public final class PaymentInvoiceMessage extends MediaMessage implements Payment
      */
     @Override
     public MediaMessageType mediaType() {
-        return paymentAttachmentType.toMediaType();
+        return attachmentType == AttachmentType.IMAGE ? MediaMessageType.IMAGE : MediaMessageType.DOCUMENT;
     }
 
     /**
@@ -146,13 +146,6 @@ public final class PaymentInvoiceMessage extends MediaMessage implements Payment
         @JsonCreator
         public static AttachmentType of(int index) {
             return Arrays.stream(values()).filter(entry -> entry.index() == index).findFirst().orElse(null);
-        }
-
-        public MediaMessageType toMediaType(){
-            return switch (this){
-                case IMAGE -> MediaMessageType.IMAGE;
-                case PDF -> MediaMessageType.DOCUMENT;
-            };
         }
     }
 }
