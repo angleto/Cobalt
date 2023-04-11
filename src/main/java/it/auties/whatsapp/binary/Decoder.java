@@ -34,7 +34,7 @@ public class Decoder {
         var buffer = Bytes.of(input);
         var token = buffer.readByte() & 2;
         var data = buffer.remaining().toByteArray();
-        this.buffer = Bytes.of(token == 0 ? data : BytesHelper.decompress(data));
+        this.buffer = Bytes.of(token == 0 ? data : BytesHelper.deflate(data));
         return readEmbeddedNode();
     }
 

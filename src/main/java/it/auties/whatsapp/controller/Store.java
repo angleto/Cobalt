@@ -61,7 +61,7 @@ public final class Store extends Controller<Store> {
      */
     @Getter
     @Setter
-    private String locale;
+    private String userLocale;
 
     /**
      * The name of the user linked to this account. This field will be null while the user hasn't
@@ -69,21 +69,14 @@ public final class Store extends Controller<Store> {
      */
     @Getter
     @Setter
-    private String name;
-
-    /**
-     * Whether the linked companion is a business account or not
-     */
-    @Getter
-    @Setter
-    private boolean isBusiness;
+    private String userCompanionName;
 
     /**
      * The hash of the companion associated with this session
      */
     @Getter
     @Setter
-    private String deviceHash;
+    private String userCompanionDeviceHash;
 
     /**
      * A map of all the devices that the companion has associated using WhatsappWeb
