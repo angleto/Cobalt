@@ -525,22 +525,22 @@ public interface Listener {
     }
 
     /**
-     * Called when the companion's about changes
+     * Called when the companion's status changes
      *
-     * @param oldAbout the non-null old about
-     * @param newAbout the non-null new about
+     * @param oldStatus the non-null old status
+     * @param newStatus the non-null new status
      */
-    default void onUserAboutChange(String oldAbout, String newAbout) {
+    default void onUserStatusChange(String oldStatus, String newStatus) {
     }
 
     /**
-     * Called when the companion's about changes
+     * Called when the companion's status changes
      *
      * @param whatsapp  an instance to the calling api
-     * @param oldAbout the non-null old about
-     * @param newAbout the non-null new about
+     * @param oldStatus the non-null old status
+     * @param newStatus the non-null new status
      */
-    default void onUserAboutChange(Whatsapp whatsapp, String oldAbout, String newAbout) {
+    default void onUserStatusChange(Whatsapp whatsapp, String oldStatus, String newStatus) {
     }
 
     /**
@@ -633,25 +633,6 @@ public interface Listener {
      * @param newPrivacyEntry the new entry
      */
     default void onPrivacySettingChanged(PrivacySettingEntry oldPrivacyEntry, PrivacySettingEntry newPrivacyEntry){
-
-    }
-
-    /**
-     * Called when the list of companion devices is updated
-     *
-     * @param whatsapp an instance to the calling api
-     * @param devices  the non-null devices
-     */
-    default void onCompanionDevices(Whatsapp whatsapp, Collection<ContactJid> devices){
-
-    }
-
-    /**
-     * Called when the list of companion devices is updated
-     *
-     * @param devices  the non-null devices
-     */
-    default void onCompanionDevices(Collection<ContactJid> devices){
 
     }
 }
