@@ -815,7 +815,7 @@ public class Whatsapp {
      *
      * @param onUserStatusChange the non-null listener
      */
-    public Whatsapp addUserStatusChangeListener(@NonNull onWhatsappUserAboutChange onUserStatusChange) {
+    public Whatsapp addUserStatusChangeListener(@NonNull OnWhatsappUserAboutChange onUserStatusChange) {
         return addListener(onUserStatusChange);
     }
 
