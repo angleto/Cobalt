@@ -237,7 +237,7 @@ public class RunCITest implements Listener {
             return;
         }
         log("Querying %s's status...", contact);
-        api.queryStatus(contact)
+        api.queryAbout(contact)
                 .join()
                 .ifPresentOrElse(status -> log("Queried %s", status), () -> log("%s doesn't have a status", contact));
     }
