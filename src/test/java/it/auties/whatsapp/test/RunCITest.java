@@ -112,10 +112,10 @@ public class RunCITest implements Listener {
         api.addListener(this);
     }
 
-    private String onScanCode(VerificationCodeResponse type) {
+    private CompletableFuture<String> onScanCode(VerificationCodeResponse type) {
         System.out.println("Enter OTP: ");
         var scanner = new Scanner(System.in);
-        return scanner.nextLine().trim();
+        return CompletableFuture.completedFuture(scanner.nextLine().trim());
     }
 
     @SneakyThrows

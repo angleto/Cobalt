@@ -1,6 +1,14 @@
 package it.auties.whatsapp.api;
 
+import com.google.zxing.BinaryBitmap;
+import com.google.zxing.ChecksumException;
+import com.google.zxing.FormatException;
+import com.google.zxing.NotFoundException;
+import com.google.zxing.client.j2se.BufferedImageLuminanceSource;
+import com.google.zxing.common.HybridBinarizer;
+import com.google.zxing.qrcode.QRCodeReader;
 import it.auties.bytes.Bytes;
+import it.auties.curve25519.Curve25519;
 import it.auties.linkpreview.LinkPreview;
 import it.auties.linkpreview.LinkPreviewMedia;
 import it.auties.linkpreview.LinkPreviewResult;
@@ -9,6 +17,7 @@ import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.crypto.AesGmc;
 import it.auties.whatsapp.crypto.Hkdf;
+import it.auties.whatsapp.crypto.Hmac;
 import it.auties.whatsapp.crypto.Sha256;
 import it.auties.whatsapp.listener.*;
 import it.auties.whatsapp.model.action.*;
@@ -19,17 +28,22 @@ import it.auties.whatsapp.model.business.BusinessProfile;
 import it.auties.whatsapp.model.button.FourRowTemplate;
 import it.auties.whatsapp.model.button.HydratedFourRowTemplate;
 import it.auties.whatsapp.model.chat.*;
+import it.auties.whatsapp.model.companion.CompanionLinkResult;
 import it.auties.whatsapp.model.contact.ContactJid;
 import it.auties.whatsapp.model.contact.ContactJid.Server;
 import it.auties.whatsapp.model.contact.ContactJidProvider;
 import it.auties.whatsapp.model.contact.ContactStatus;
 import it.auties.whatsapp.model.info.ContextInfo;
 import it.auties.whatsapp.model.info.MessageInfo;
+import it.auties.whatsapp.model.media.AttachmentProvider;
+import it.auties.whatsapp.model.media.AttachmentType;
+import it.auties.whatsapp.model.media.MediaFile;
 import it.auties.whatsapp.model.message.button.ButtonsMessage;
 import it.auties.whatsapp.model.message.button.InteractiveMessage;
 import it.auties.whatsapp.model.message.button.TemplateMessage;
 import it.auties.whatsapp.model.message.model.*;
 import it.auties.whatsapp.model.message.server.ProtocolMessage;
+import it.auties.whatsapp.model.message.server.ProtocolMessage.ProtocolMessageType;
 import it.auties.whatsapp.model.message.standard.*;
 import it.auties.whatsapp.model.poll.PollAdditionalMetadata;
 import it.auties.whatsapp.model.poll.PollUpdateEncryptedMetadata;
@@ -44,20 +58,29 @@ import it.auties.whatsapp.model.request.Node;
 import it.auties.whatsapp.model.request.ReplyHandler;
 import it.auties.whatsapp.model.response.ContactStatusResponse;
 import it.auties.whatsapp.model.response.HasWhatsappResponse;
+import it.auties.whatsapp.model.signal.auth.*;
+import it.auties.whatsapp.model.signal.keypair.SignalKeyPair;
 import it.auties.whatsapp.model.sync.*;
+import it.auties.whatsapp.model.sync.HistorySyncNotification.Type;
 import it.auties.whatsapp.socket.SocketHandler;
 import it.auties.whatsapp.util.*;
 import lombok.NonNull;
 
+import javax.imageio.ImageIO;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static it.auties.bytes.Bytes.ofRandom;
@@ -69,6 +92,7 @@ import static it.auties.whatsapp.model.contact.ContactJid.Server.GROUP;
 import static it.auties.whatsapp.model.message.standard.TextMessage.TextMessagePreviewType.NONE;
 import static it.auties.whatsapp.model.message.standard.TextMessage.TextMessagePreviewType.VIDEO;
 import static it.auties.whatsapp.model.sync.RecordSync.Operation.SET;
+import static it.auties.whatsapp.util.Spec.Whatsapp.*;
 import static java.util.Objects.requireNonNullElse;
 import static java.util.Objects.requireNonNullElseGet;
 
@@ -705,21 +729,6 @@ public class Whatsapp {
     }
 
     /**
-     * Registers a message reply listener for a specific message
-     *
-     * @param id             the non-null id of the target message
-     * @param onMessageReply the non-null listener
-     */
-    public Whatsapp addMessageReplyListener(@NonNull String id, @NonNull OnMessageReply onMessageReply) {
-        return addMessageReplyListener((info, quoted) -> {
-            if (!info.id().equals(id)) {
-                return;
-            }
-            onMessageReply.onMessageReply(info, quoted);
-        });
-    }
-
-    /**
      * Registers a message reply listener
      *
      * @param onMessageReply the listener to register
@@ -745,13 +754,33 @@ public class Whatsapp {
      * @param id             the non-null id of the target message
      * @param onMessageReply the non-null listener
      */
+    public Whatsapp addMessageReplyListener(@NonNull String id, @NonNull OnMessageReply onMessageReply) {
+        return addMessageReplyListener(onMessageWithId(id, onMessageReply, false));
+    }
+
+    /**
+     * Registers a message reply listener for a specific message
+     *
+     * @param id             the non-null id of the target message
+     * @param onMessageReply the non-null listener
+     */
     public Whatsapp addMessageReplyListener(@NonNull String id, @NonNull OnWhatsappMessageReply onMessageReply) {
-        return addMessageReplyListener((info, quoted) -> {
+        return addMessageReplyListener(onMessageWithId(id, onMessageReply, true));
+    }
+
+    private OnMessageReply onMessageWithId(String id, Listener onMessageReply, boolean whatsapp) {
+        return (info, quoted) -> {
             if (!info.id().equals(id)) {
                 return;
             }
+
+            if(whatsapp) {
+                onMessageReply.onMessageReply(this, info, quoted);
+                return;
+            }
+
             onMessageReply.onMessageReply(info, quoted);
-        });
+        };
     }
 
     /**
@@ -775,10 +804,10 @@ public class Whatsapp {
     /**
      * Registers a status change listener
      *
-     * @param onUserStatusChange the non-null listener
+     * @param onUserAboutChange the non-null listener
      */
-    public Whatsapp addUserStatusChangeListener(@NonNull OnUserStatusChange onUserStatusChange) {
-        return addListener(onUserStatusChange);
+    public Whatsapp addUserStatusChangeListener(@NonNull OnUserAboutChange onUserAboutChange) {
+        return addListener(onUserAboutChange);
     }
 
     /**
@@ -786,7 +815,7 @@ public class Whatsapp {
      *
      * @param onUserStatusChange the non-null listener
      */
-    public Whatsapp addUserStatusChangeListener(@NonNull OnWhatsappUserStatusChange onUserStatusChange) {
+    public Whatsapp addUserStatusChangeListener(@NonNull onWhatsappUserAboutChange onUserStatusChange) {
         return addListener(onUserStatusChange);
     }
 
