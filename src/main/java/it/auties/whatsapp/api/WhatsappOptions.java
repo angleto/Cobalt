@@ -106,7 +106,9 @@ public abstract sealed class WhatsappOptions permits WebOptions, MobileOptions {
      * @return the non-null client type
      */
     @NonNull
-    public abstract ClientType clientType();
+    public static ClientType clientType() {
+        return ClientType.WEB_CLIENT;
+    }
 
     /**
      * The name of the os running the client, can be fake
@@ -175,7 +177,7 @@ public abstract sealed class WhatsappOptions permits WebOptions, MobileOptions {
          * @return the non-null client type
          */
         @NonNull
-        public ClientType clientType() {
+        public static ClientType clientType() {
             return ClientType.WEB_CLIENT;
         }
 
@@ -255,7 +257,7 @@ public abstract sealed class WhatsappOptions permits WebOptions, MobileOptions {
          * @return the non-null client type
          */
         @NonNull
-        public ClientType clientType() {
+        public static ClientType clientType() {
             return ClientType.APP_CLIENT;
         }
 
