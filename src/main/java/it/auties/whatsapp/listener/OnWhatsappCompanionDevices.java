@@ -15,4 +15,3 @@ public interface OnWhatsappCompanionDevices extends Listener {
     @Override
     void onCompanionDevices(Whatsapp whatsapp, Collection<ContactJid> devices);
 }
-

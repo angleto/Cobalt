@@ -9,4 +9,3 @@ public interface OnUserAboutChange extends Listener {
      */
     void onUserAboutChange(String oldAbout, String newAbout);
 }
-

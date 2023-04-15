@@ -13,4 +13,3 @@ public interface OnCompanionDevices extends Listener {
     @Override
     void onCompanionDevices(Collection<ContactJid> devices);
 }
-

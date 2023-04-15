@@ -12,4 +12,3 @@ public interface OnWhatsappUserAboutChange extends Listener {
      */
     void onUserAboutChange(Whatsapp whatsapp, String oldAbout, String newAbout);
 }
-
