@@ -2702,7 +2702,7 @@ public class Whatsapp {
     /**
      * Links a companion to this device
      *
-     * @param qrCode the non-null qr code as a String
+     * @param qrCodeData the non-null qr code as a String
      * @return a future
      */
     public CompletableFuture<CompanionLinkResult> linkCompanion(@NonNull String qrCodeData){
