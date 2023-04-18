@@ -1,13 +1,17 @@
 package it.auties.whatsapp.test;
 
 import it.auties.whatsapp.api.DisconnectReason;
+import it.auties.whatsapp.api.WebHistoryLength;
 import it.auties.whatsapp.api.Whatsapp;
-import it.auties.whatsapp.api.WhatsappOptions.WebOptions;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.github.GithubActions;
 import it.auties.whatsapp.listener.Listener;
-import it.auties.whatsapp.model.button.*;
+import it.auties.whatsapp.model.button.base.Button;
+import it.auties.whatsapp.model.button.base.ButtonText;
+import it.auties.whatsapp.model.button.misc.ButtonRow;
+import it.auties.whatsapp.model.button.misc.ButtonSection;
+import it.auties.whatsapp.model.button.template.hydrated.*;
 import it.auties.whatsapp.model.chat.Chat;
 import it.auties.whatsapp.model.contact.Contact;
 import it.auties.whatsapp.model.contact.ContactJid;
@@ -16,10 +20,11 @@ import it.auties.whatsapp.model.interactive.InteractiveButton;
 import it.auties.whatsapp.model.interactive.InteractiveHeader;
 import it.auties.whatsapp.model.interactive.InteractiveNativeFlow;
 import it.auties.whatsapp.model.message.button.*;
-import it.auties.whatsapp.model.message.standard.ImageMessage;
+import it.auties.whatsapp.model.message.model.MessageContainer;
+import it.auties.whatsapp.model.message.standard.TextMessage;
 import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.util.Json;
 import it.auties.whatsapp.utils.ConfigUtils;
-import it.auties.whatsapp.utils.MediaUtils;
 import it.auties.whatsapp.utils.Smile;
 import lombok.SneakyThrows;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
@@ -56,12 +61,12 @@ public class ButtonsTest implements Listener {
 
     @BeforeAll
     public void init() throws IOException, InterruptedException {
+        createLatch();
         createApi();
         if (skip) {
             return;
         }
         loadConfig();
-        createLatch();
         future = api.connect().thenComposeAsync(Whatsapp::onDisconnected);
         latch.await();
     }
@@ -74,12 +79,17 @@ public class ButtonsTest implements Listener {
                 skip = true;
                 return;
             }
-            api = Whatsapp.lastConnection();
-            api.addListener(this);
+            api = Whatsapp.webBuilder()
+                    .lastConnection()
+                    .historyLength(WebHistoryLength.ZERO)
+                    .build()
+                    .addListener(this)
+                    .connect()
+                    .join();
             return;
         }
         log("Detected github actions environment");
-        api = Whatsapp.newConnection(WebOptions.defaultOptions(), loadGithubParameter(GithubActions.STORE_NAME, Store.class), loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class));
+        api = new Whatsapp(loadGithubParameter(GithubActions.STORE_NAME, Store.class), loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class));
         api.addListener(this);
     }
 
@@ -126,12 +136,8 @@ public class ButtonsTest implements Listener {
             return;
         }
         log("Sending buttons...");
-        var image = ImageMessage.simpleBuilder()
-                .media(MediaUtils.readBytes("https://2.bp.blogspot.com/-DqXILvtoZFA/Wmmy7gRahnI/AAAAAAAAB0g/59c8l63QlJcqA0591t8-kWF739DiOQLcACEwYBhgL/s1600/pol-venere-botticelli-01.jpg"))
-                .caption("Image test")
-                .build();
         var imageButtons = ButtonsMessage.simpleBuilder()
-                .header(image)
+                .header(TextMessage.of("Header"))
                 .body("A nice body")
                 .footer("A nice footer")
                 .buttons(createButtons())
@@ -140,8 +146,72 @@ public class ButtonsTest implements Listener {
         log("Sent buttons");
     }
 
+    @Test
+    @Order(1)
+    public void testButtonReplyMessage() {
+        if (skip) {
+            return;
+        }
+        log("Sending button reply...");
+        var imageButtons = Json.readValue("""
+                {
+                   "buttonsResponseMessage":{
+                      "contextInfo":{
+                         "quotedMessageId":"0E7F901C06D16F2A",
+                         "quotedMessageSenderJid":"393495089819@s.whatsapp.net",
+                         "quotedMessageSender":{
+                            "jid":"393495089819@s.whatsapp.net",
+                            "chosenName":"Alessandro Autiero",
+                            "lastKnownPresence":"AVAILABLE",
+                            "lastSeen":1681323820.337021700
+                         },
+                         "quotedMessage":{
+                            "buttonsMessage":{
+                               "headerText":"Header",
+                               "body":"A nice body",
+                               "footer":"A nice footer",
+                               "buttons":[
+                                  {
+                                     "id":"089c872c1759",
+                                     "text":{
+                                        "content":"Button 0"
+                                     },
+                                     "type":1
+                                  },
+                                  {
+                                     "id":"9043a40b60da",
+                                     "text":{
+                                        "content":"Button 1"
+                                     },
+                                     "type":1
+                                  },
+                                  {
+                                     "id":"d2a5a445a2de",
+                                     "text":{
+                                        "content":"Button 2"
+                                     },
+                                     "type":1
+                                  }
+                               ],
+                               "headerType":2
+                            }
+                         }
+                      },
+                      "buttonId":"d2a5a445a2de",
+                      "buttonText":"Button 2",
+                      "responseType":1
+                   }
+                }
+                """, MessageContainer.class);
+        api.sendMessage(contact, imageButtons).join();
+        log("Sent button reply");
+    }
+
     private List<Button> createButtons() {
-        return IntStream.range(0, 3).mapToObj("Button %s"::formatted).map(Button::of).toList();
+        return IntStream.range(0, 3)
+                .mapToObj(index -> ButtonText.of("Button %s".formatted(index)))
+                .map(Button::of)
+                .toList();
     }
 
     @Test
@@ -181,10 +251,7 @@ public class ButtonsTest implements Listener {
                 .footer("A nice footer")
                 .buttons(List.of(quickReplyButton, urlButton, callButton))
                 .build();
-        var message = HighlyStructuredMessage.builder()
-                .templateMessage(TemplateMessage.of(fourRowTemplate))
-                .build();
-        api.sendMessage(contact, message).join();
+        api.sendMessage(contact, TemplateMessage.of(fourRowTemplate)).join();
         log("Sent template message");
     }
 

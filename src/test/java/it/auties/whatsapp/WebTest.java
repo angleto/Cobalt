@@ -1,12 +1,18 @@
 package it.auties.whatsapp;
 
+import it.auties.whatsapp.api.WebHistoryLength;
 import it.auties.whatsapp.api.Whatsapp;
 
 // Just used for testing locally
 public class WebTest {
     public static void main(String[] args) {
-        var whatsapp = Whatsapp.newConnection()
-                .addLoggedInListener(api -> System.out.printf("Connected: %s%n", api.store().privacySettings()))
+        var whatsapp = Whatsapp.webBuilder()
+                .lastConnection()
+                .historyLength(WebHistoryLength.ZERO)
+                .build()
+                .addLoggedInListener(api -> {
+                    System.out.printf("Connected: %s%n", api.store().privacySettings());
+                })
                 .addNewMessageListener(message -> System.out.println(message.toJson()))
                 .addContactsListener((api, contacts) -> System.out.printf("Contacts: %s%n", contacts.size()))
                 .addChatsListener(chats -> System.out.printf("Chats: %s%n", chats.size()))

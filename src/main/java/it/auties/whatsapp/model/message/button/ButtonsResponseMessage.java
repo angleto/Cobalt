@@ -2,14 +2,13 @@ package it.auties.whatsapp.model.message.button;
 
 import it.auties.protobuf.base.ProtobufMessage;
 import it.auties.protobuf.base.ProtobufProperty;
-import it.auties.whatsapp.model.button.Button;
+import it.auties.whatsapp.model.button.base.Button;
 import it.auties.whatsapp.model.info.ContextInfo;
 import it.auties.whatsapp.model.info.MessageInfo;
 import it.auties.whatsapp.model.message.model.ButtonReplyMessage;
 import it.auties.whatsapp.model.message.model.MessageType;
 import it.auties.whatsapp.util.Validate;
 import lombok.*;
-import lombok.Builder.Default;
 import lombok.experimental.Accessors;
 import lombok.experimental.SuperBuilder;
 import lombok.extern.jackson.Jacksonized;
@@ -47,6 +46,9 @@ public final class ButtonsResponseMessage extends ButtonReplyMessage {
     @ProtobufProperty(index = 3, type = MESSAGE, implementation = ContextInfo.class)
     private ContextInfo contextInfo;
 
+    /**
+     * The type of the response
+     */
     @ProtobufProperty(index = 4, name = "type", type = MESSAGE)
     private ResponseType responseType;
 
@@ -63,7 +65,7 @@ public final class ButtonsResponseMessage extends ButtonReplyMessage {
                 .content());
         return ButtonsResponseMessage.builder()
                 .buttonId(button.id())
-                .buttonText(button.text().content())
+                .buttonText(button.bodyText().content())
                 .contextInfo(ContextInfo.of(quoted))
                 .build();
     }
