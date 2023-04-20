@@ -7,7 +7,6 @@ import it.auties.whatsapp.listener.RegisterListener;
 import it.auties.whatsapp.model.signal.auth.Version;
 
 import java.net.URI;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 
@@ -17,14 +16,8 @@ public sealed class OptionsBuilder<T extends OptionsBuilder<T>> permits MobileOp
     protected Keys keys;
 
     public OptionsBuilder(UUID connectionUuid, ControllerSerializer serializer, ConnectionType connectionType, ClientType clientType){
-        if(connectionType.equals(ConnectionType.NEW)) {
-            var sessionUuid = Objects.requireNonNullElseGet(connectionUuid, UUID::randomUUID);
-            this.store = Store.of(sessionUuid, connectionType, clientType, serializer);
-            this.keys = Keys.of(sessionUuid, connectionType, clientType, serializer);
-        } else {
-            this.store = Store.of(connectionUuid, connectionType, clientType, serializer);
-            this.keys = Keys.of(connectionUuid, connectionType, clientType, serializer);
-        }
+        this.store = Store.of(connectionUuid, connectionType, clientType, serializer);
+        this.keys = Keys.of(connectionUuid, connectionType, clientType, serializer);
     }
 
     /**
