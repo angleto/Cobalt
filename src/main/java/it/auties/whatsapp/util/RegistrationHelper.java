@@ -2,12 +2,14 @@ package it.auties.whatsapp.util;
 
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
-import it.auties.whatsapp.crypto.MD5;
+import it.auties.whatsapp.exception.RegistrationException;
 import it.auties.whatsapp.model.mobile.VerificationCodeMethod;
 import it.auties.whatsapp.model.mobile.VerificationCodeResponse;
 import it.auties.whatsapp.model.request.Attributes;
+import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentPlatform;
 import it.auties.whatsapp.util.Spec.Whatsapp;
 import lombok.experimental.UtilityClass;
+import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
 import java.net.InetSocketAddress;
 import java.net.ProxySelector;
@@ -16,18 +18,21 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.security.Security;
 import java.util.Base64;
-import java.util.HexFormat;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ThreadLocalRandom;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @UtilityClass
 public class RegistrationHelper {
+    static {
+        Security.addProvider(new BouncyCastleProvider());
+    }
+
     public CompletableFuture<Void> registerPhoneNumber(Store store, Keys keys, Supplier<CompletableFuture<String>> handler, VerificationCodeMethod method) {
         if (method == VerificationCodeMethod.NONE) {
             return sendVerificationCode(store, keys, handler);
@@ -42,13 +47,17 @@ public class RegistrationHelper {
             return CompletableFuture.completedFuture(null);
         }
 
-        var codeOptions = getRegistrationOptions(store, keys,
+        var codeOptions = getRegistrationOptions(
+                store,
+                keys,
                 Map.entry("mcc", store.phoneNumber().countryCode().mcc()),
                 Map.entry("mnc", store.phoneNumber().countryCode().mnc()),
                 Map.entry("sim_mcc", "000"),
-                Map.entry("sim_mnc", "000"), Map.entry("method", method.type()),
+                Map.entry("sim_mnc", "000"),
+                Map.entry("method", method.type()),
                 Map.entry("reason", ""),
-                Map.entry("hasav", "1"));
+                Map.entry("hasav", "1")
+        );
         return sendRegistrationRequest(store,"/code", codeOptions)
                 .thenAcceptAsync(RegistrationHelper::checkResponse)
                 .thenRunAsync(() -> saveRegistrationStatus(store, keys, false));
@@ -78,7 +87,8 @@ public class RegistrationHelper {
 
     private void checkResponse(HttpResponse<String> result) {
         var response = Json.readValue(result.body(), VerificationCodeResponse.class);
-        Validate.isTrue(response.status().isSuccessful(), "Invalid response, status code %s: %s".formatted(result.statusCode(), result.body()));
+        Validate.isTrue(response.status().isSuccessful(),
+                "Invalid response, status code %s: %s", RegistrationException.class, result.statusCode(), result.body());
     }
 
     private CompletableFuture<HttpResponse<String>> sendRegistrationRequest(Store store, String path, Map<String, Object> params) {
@@ -87,9 +97,27 @@ public class RegistrationHelper {
                 .uri(URI.create("%s%s?%s".formatted(Whatsapp.MOBILE_REGISTRATION_ENDPOINT, path, toFormParams(params))))
                 .GET()
                 .header("Content-Type", "application/x-www-form-urlencoded")
-                .header("User-Agent", Whatsapp.MOBILE_UA.formatted(store.version()))
+                .header("User-Agent", getUserAgent(store))
                 .build();
         return client.sendAsync(request, BodyHandlers.ofString());
+    }
+
+    private String getUserAgent(Store store) {
+        return "WhatsApp/%s %s/%s Device/%s-%s".formatted(
+                store.version(),
+                getMobileOsName(store.osType()),
+                store.osVersion(),
+                store.manufacturer(),
+                store.model()
+        );
+    }
+
+    private Object getMobileOsName(UserAgentPlatform platform) {
+        return switch (platform) {
+            case ANDROID -> "Android";
+            case IOS -> "iOS";
+            default -> throw new IllegalStateException("Unsupported mobile os: " + platform);
+        };
     }
 
     private HttpClient createClient(Store store) {
@@ -112,7 +140,6 @@ public class RegistrationHelper {
                 .put("mistyped", "6")
                 .put("authkey", Base64.getUrlEncoder().encodeToString(keys.noiseKeyPair().publicKey()))
                 .put("e_regid", Base64.getUrlEncoder().encodeToString(keys.encodedRegistrationId()))
-                .put("e_keytype", "BQ")
                 .put("e_ident", Base64.getUrlEncoder().encodeToString(keys.identityKeyPair().publicKey()))
                 .put("e_skey_id", Base64.getUrlEncoder().encodeToString(keys.signedKeyPair().encodedId()))
                 .put("e_skey_val", Base64.getUrlEncoder().encodeToString(keys.signedKeyPair().publicKey()))
@@ -122,10 +149,10 @@ public class RegistrationHelper {
                 .put("network_radio_type", "1")
                 .put("simnum", "1")
                 .put("hasinrc", "1")
-                .put("pid", ThreadLocalRandom.current().nextInt(1000))
-                .put("rc", "0")
+                .put("pid", ProcessHandle.current().pid())
+                .put("rc", store.releaseChannel().index())
                 .put("id", keys.identityId())
-                .put("token", HexFormat.of().formatHex(MD5.calculate(Whatsapp.MOBILE_TOKEN + store.phoneNumber().number())))
+                .put("token", TokenHelper.getToken(String.valueOf(store.phoneNumber().number()), store.osType()))
                 .toMap();
     }
 

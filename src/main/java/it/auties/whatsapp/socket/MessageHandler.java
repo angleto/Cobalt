@@ -9,7 +9,6 @@ import it.auties.whatsapp.crypto.*;
 import it.auties.whatsapp.model.action.ContactAction;
 import it.auties.whatsapp.model.business.BusinessVerifiedNameCertificate;
 import it.auties.whatsapp.model.business.BusinessVerifiedNameDetails;
-import it.auties.whatsapp.model.button.template.hydrated.HydratedTemplateButton;
 import it.auties.whatsapp.model.chat.*;
 import it.auties.whatsapp.model.chat.Chat.EndOfHistoryTransferType;
 import it.auties.whatsapp.model.contact.Contact;
@@ -44,6 +43,7 @@ import java.lang.System.Logger;
 import java.lang.System.Logger.Level;
 import java.time.Duration;
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -58,6 +58,7 @@ import static it.auties.whatsapp.util.Spec.Signal.*;
 
 class MessageHandler {
     private static final int MAX_ATTEMPTS = 3;
+    private static final int WEEKS_GROUP_METADATA_SYNC = 2;
 
     private final SocketHandler socketHandler;
     private final OrderedAsyncTaskRunner runner;
@@ -67,6 +68,8 @@ class MessageHandler {
     private final Map<ContactJid, List<PastParticipant>> pastParticipantsQueue;
     private final Set<Chat> historyCache;
     private final Logger logger;
+    private final DeferredTaskRunner deferredTaskRunner;
+    private final Set<ContactJid> attributedGroups;
 
     protected MessageHandler(SocketHandler socketHandler) {
         this.socketHandler = socketHandler;
@@ -75,8 +78,10 @@ class MessageHandler {
         this.pastParticipantsQueue = new ConcurrentHashMap<>();
         this.retries = new ConcurrentHashMap<>();
         this.historyCache = ConcurrentHashMap.newKeySet();
+        this.attributedGroups = ConcurrentHashMap.newKeySet();
         this.runner = new OrderedAsyncTaskRunner();
         this.logger = System.getLogger("MessageHandler");
+        this.deferredTaskRunner = new DeferredTaskRunner();
     }
 
     private <K, V> Cache<K, V> createCache(Duration duration) {
@@ -198,18 +203,18 @@ class MessageHandler {
 
         if(request.info().message().content() instanceof ButtonMessage buttonMessage) {
             if(buttonMessage instanceof TemplateMessage templateMessage){
-                var features =  templateMessage.content()
-                        .hydratedButtons()
-                        .stream()
-                        .map(HydratedTemplateButton::button)
-                        .flatMap(Optional::stream)
-                        .map(entry -> Node.ofAttributes(
-                                "feature",
-                                Map.of(
-                                        "name", entry.buttonType().name().toLowerCase(Locale.ROOT) + "_button"
-                                )
-                        ))
-                        .toList();
+                // var features =  templateMessage.content()
+                //                        .hydratedButtons()
+                //                        .stream()
+                //                        .map(HydratedTemplateButton::button)
+                //                        .flatMap(Optional::stream)
+                //                        .map(entry -> Node.ofAttributes(
+                //                                "feature",
+                //                                Map.of(
+                //                                        "name", entry.buttonType().name().toLowerCase(Locale.ROOT) + "_button"
+                //                                )
+                //                        ))
+                //                        .toList();
                 body.add(Node.ofChildren(
                         "hsm",
                         Map.of(
@@ -219,8 +224,8 @@ class MessageHandler {
                                 "v", 1
                         ),
                         Node.ofChildren(
-                                "capabilities",
-                                features
+                                "capabilities" //,
+                                // features
                         )
                 ));
             }else {
@@ -534,7 +539,6 @@ class MessageHandler {
             var key = keyBuilder.id(id).build();
             if(isSelfMessage(key)){
                 socketHandler.sendReceipt(key.chatJid(), key.senderJid().orElse(key.chatJid()), List.of(key.id()), null);
-                socketHandler.sendMessageAck(infoNode, infoNode.attributes().toMap());
                 return;
             }
 
@@ -544,7 +548,6 @@ class MessageHandler {
                 }
 
                 socketHandler.sendReceipt(key.chatJid(), key.senderJid().orElse(key.chatJid()), List.of(key.id()), null);
-                socketHandler.sendMessageAck(infoNode, infoNode.attributes().toMap());
                 return;
             }
 
@@ -557,7 +560,6 @@ class MessageHandler {
                 }
 
                 socketHandler.sendReceipt(key.chatJid(), key.senderJid().orElse(key.chatJid()), List.of(key.id()), null);
-                socketHandler.sendMessageAck(infoNode, infoNode.attributes().toMap());
                 return;
             }
 
@@ -575,7 +577,6 @@ class MessageHandler {
             var category = infoNode.attributes().getString("category");
             saveMessage(info, category, offline);
             socketHandler.sendReceipt(info.chatJid(), info.senderJid(), List.of(info.key().id()), null);
-            socketHandler.sendMessageAck(infoNode, infoNode.attributes().toMap());
             socketHandler.onReply(info);
         } catch (Throwable throwable) {
             socketHandler.handleFailure(MESSAGE, throwable);
@@ -716,7 +717,6 @@ class MessageHandler {
 
     private void onProtocolMessage(MessageInfo info, ProtocolMessage protocolMessage, boolean peer) {
         handleProtocolMessage(info, protocolMessage);
-        socketHandler.store().serialize(true);
         if (!peer) {
             return;
         }
@@ -788,7 +788,7 @@ class MessageHandler {
 
     private boolean isSyncComplete(HistorySync history) {
         return history.progress() == 100
-                && socketHandler.store().historyLength() == WebHistoryLength.THREE_MONTHS ? history.syncType() == RECENT : history.syncType() == FULL;
+                && socketHandler.store().historyLength() == WebHistoryLength.STANDARD ? history.syncType() == RECENT : history.syncType() == FULL;
     }
 
     private void onMessageDeleted(MessageInfo info, MessageInfo message) {
@@ -802,7 +802,10 @@ class MessageHandler {
             case INITIAL_STATUS_V3 -> handleInitialStatus(history);
             case PUSH_NAME -> handlePushNames(history);
             case INITIAL_BOOTSTRAP -> handleInitialBootstrap(history);
-            case RECENT, FULL -> handleChatsSync(history, false);
+            case RECENT, FULL -> {
+                deferredTaskRunner.execute();
+                handleChatsSync(history, false);
+            }
             case NON_BLOCKING_DATA -> handleNonBlockingData(history);
         }
     }
@@ -871,10 +874,21 @@ class MessageHandler {
         for (var chat : history.conversations()) {
             var pastParticipants = pastParticipantsQueue.remove(chat.jid());
             if (pastParticipants != null) {
-                chat.pastParticipants().addAll(pastParticipants);
+                chat.addPastParticipants(pastParticipants);
             }
+            if(shouldSyncGroupMetadata(chat)){
+                attributedGroups.add(chat.jid());
+                deferredTaskRunner.schedule(() -> socketHandler.queryGroupMetadata(chat));
+            }
+
             store.addChat(chat);
         }
+    }
+
+    private boolean shouldSyncGroupMetadata(Chat chat) {
+        return chat.isGroup()
+                && !attributedGroups.contains(chat.jid())
+                && chat.timestamp().until(ZonedDateTime.now(), ChronoUnit.WEEKS) < WEEKS_GROUP_METADATA_SYNC;
     }
 
     private void handleNonBlockingData(HistorySync history) {

@@ -6,6 +6,7 @@ import it.auties.whatsapp.binary.PatchType;
 import it.auties.whatsapp.crypto.AesCbc;
 import it.auties.whatsapp.crypto.Hmac;
 import it.auties.whatsapp.crypto.LTHash;
+import it.auties.whatsapp.exception.HmacValidationException;
 import it.auties.whatsapp.model.action.*;
 import it.auties.whatsapp.model.chat.Chat;
 import it.auties.whatsapp.model.chat.ChatMute;
@@ -143,11 +144,15 @@ class AppStateHandler {
     }
 
     private boolean isSyncComplete() {
-        return Arrays.stream(PatchType.values()).allMatch(this::isSyncComplete);
+        return Arrays.stream(PatchType.values())
+                .allMatch(this::isSyncComplete);
     }
 
     private boolean isSyncComplete(PatchType entry) {
-        return socketHandler.keys().findHashStateByName(entry).filter(type -> type.version() > 0).isPresent();
+        return socketHandler.keys()
+                .findHashStateByName(entry)
+                .filter(type -> type.version() > 0)
+                .isPresent();
     }
 
     private Void onPullError(boolean initial, Throwable exception) {
@@ -328,7 +333,7 @@ class AppStateHandler {
 
     private Chat createChat(MessageIndexInfo messageIndex) {
         var chat = messageIndex.chatJid().orElseThrow();
-        return socketHandler.store().addChat(chat);
+        return socketHandler.store().addNewChat(chat);
     }
 
     private Contact createContact(MessageIndexInfo messageIndex) {

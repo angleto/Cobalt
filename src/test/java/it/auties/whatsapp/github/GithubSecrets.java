@@ -6,7 +6,7 @@ import com.goterl.lazysodium.utils.LibraryLoader;
 import it.auties.whatsapp.api.Whatsapp;
 import it.auties.whatsapp.util.Json;
 import it.auties.whatsapp.utils.ConfigUtils;
-import it.auties.whatsapp.utils.Smile;
+import it.auties.whatsapp.util.Smile;
 import lombok.SneakyThrows;
 import lombok.experimental.UtilityClass;
 import org.bouncycastle.bcpg.SymmetricKeyAlgorithmTags;
@@ -122,9 +122,9 @@ public class GithubSecrets {
                 .build();
         var response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.ofString());
         if (response.statusCode() != 201 && response.statusCode() != 204) {
-            throw new IllegalStateException("Cannot update %s: %s(status countryCode %s)".formatted(key, response.body(), response.statusCode()));
+            throw new IllegalStateException("Cannot update %s: %s(status code %s)".formatted(key, response.body(), response.statusCode()));
         }
-        System.out.printf("Sent %s(status countryCode %s)%n", key, response.statusCode());
+        System.out.printf("Sent %s(status code %s)%n", key, response.statusCode());
     }
 
     private String loadGpgPassword() throws IOException {
