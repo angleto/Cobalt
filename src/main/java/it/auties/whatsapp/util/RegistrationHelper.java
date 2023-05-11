@@ -11,6 +11,7 @@ import it.auties.whatsapp.util.Spec.Whatsapp;
 import lombok.experimental.UtilityClass;
 import org.bouncycastle.jce.provider.BouncyCastleProvider;
 
+import java.net.HttpURLConnection;
 import java.net.InetSocketAddress;
 import java.net.ProxySelector;
 import java.net.URI;
@@ -22,7 +23,6 @@ import java.security.Security;
 import java.util.Base64;
 import java.util.Map;
 import java.util.Map.Entry;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Supplier;
 import java.util.stream.Collectors;
@@ -58,6 +58,7 @@ public class RegistrationHelper {
                 Map.entry("reason", ""),
                 Map.entry("hasav", "1")
         );
+        System.out.println(codeOptions);
         return sendRegistrationRequest(store,"/code", codeOptions)
                 .thenAcceptAsync(RegistrationHelper::checkResponse)
                 .thenRunAsync(() -> saveRegistrationStatus(store, keys, false));
@@ -86,9 +87,11 @@ public class RegistrationHelper {
     }
 
     private void checkResponse(HttpResponse<String> result) {
+        Validate.isTrue(result.statusCode() == HttpURLConnection.HTTP_OK,
+                "Invalid status code: %s", RegistrationException.class, result.statusCode(), result.body());
         var response = Json.readValue(result.body(), VerificationCodeResponse.class);
         Validate.isTrue(response.status().isSuccessful(),
-                "Invalid response, status code %s: %s", RegistrationException.class, result.statusCode(), result.body());
+                "Invalid response: %s", RegistrationException.class, result.body());
     }
 
     private CompletableFuture<HttpResponse<String>> sendRegistrationRequest(Store store, String path, Map<String, Object> params) {
@@ -131,7 +134,6 @@ public class RegistrationHelper {
 
     @SafeVarargs
     private Map<String, Object> getRegistrationOptions(Store store, Keys keys, Entry<String, Object>... attributes) {
-        Objects.requireNonNull(store.phoneNumber(), "Missing phone number: please specify it");
         return Attributes.of(attributes)
                 .put("cc", store.phoneNumber().countryCode().prefix())
                 .put("in", store.phoneNumber().number())
