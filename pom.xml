@@ -3,7 +3,7 @@
     <modelVersion>4.0.0</modelVersion>
     <groupId>com.github.auties00</groupId>
     <artifactId>whatsappweb4j</artifactId>
-    <version>3.3.1</version>
+    <version>3.4.0</version>
     <name>${project.groupId}:${project.artifactId}</name>
     <description>Standalone fully-featured Whatsapp Web API for Java and Kotlin</description>
     <url>https://github.com/Auties00/WhatsappWeb4j</url>
@@ -55,6 +55,70 @@
             </activation>
             <build>
                 <plugins>
+                    <!-- Attach the sourcecode -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <version>${maven.source.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Delombok the project to prepare for javadoc generation -->
+                    <plugin>
+                        <groupId>com.github.auties00</groupId>
+                        <artifactId>delombok-plugin</artifactId>
+                        <version>${delombok.plugin.version}</version>
+                        <configuration>
+                            <rootDirectory>${project.build.sourceDirectory}</rootDirectory>
+                            <outputDirectory>${delombok.output}</outputDirectory>
+                            <excludedFiles>
+                                <excludedFile>module-info.java</excludedFile>
+                            </excludedFiles>
+                            <parameters>
+                                <encoding>UTF-8</encoding>
+                            </parameters>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <phase>process-sources</phase>
+                                <goals>
+                                    <goal>delombok</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+
+                    <!-- Generate and attach javadocs from delomboked source -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <version>${maven.javadoc.plugin.version}</version>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals>
+                                    <goal>jar</goal>
+                                </goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <sourcepath>${delombok.output}</sourcepath>
+                            <release>${java.version}</release>
+                            <failOnError>true</failOnError>
+                            <additionalOptions>--enable-preview</additionalOptions>
+                            <show>private</show>
+                            <debug>true</debug>
+                            <verbose>true</verbose>
+                        </configuration>
+                    </plugin>
+
                     <!-- Sign the artifacts -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
@@ -78,6 +142,19 @@
                             </execution>
                         </executions>
                     </plugin>
+
+                    <!-- Deploy the result-->
+                    <plugin>
+                        <groupId>org.sonatype.plugins</groupId>
+                        <artifactId>nexus-staging-maven-plugin</artifactId>
+                        <version>${maven.nexus.plugin.version}</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <serverId>ossrh</serverId>
+                            <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
+                            <autoReleaseAfterClose>true</autoReleaseAfterClose>
+                        </configuration>
+                    </plugin>
                 </plugins>
             </build>
         </profile>
@@ -95,7 +172,7 @@
         <maven.nexus.plugin.version>1.6.13</maven.nexus.plugin.version>
         <bouncy.castle.version>1.70</bouncy.castle.version>
         <zxing.version>3.5.1</zxing.version>
-        <protoc.version>1.22</protoc.version>
+        <protoc.version>2.0</protoc.version>
         <lombok.version>1.18.24</lombok.version>
         <junit.version>5.9.0</junit.version>
         <jna.version>5.12.1</jna.version>
@@ -114,6 +191,7 @@
         <libphonenumber.version>8.13.7</libphonenumber.version>
         <pdfbox.version>2.0.27</pdfbox.version>
         <poi.version>5.2.3</poi.version>
+        <protobuf.plugin.version>2.0</protobuf.plugin.version>
         <delombok.plugin.version>1.18.24.1</delombok.plugin.version>
         <delombok.input>${project.basedir}/src/main/java</delombok.input>
         <delombok.output>${project.build.directory}/delombok</delombok.output>
@@ -121,6 +199,22 @@
 
     <build>
         <plugins>
+            <!-- Instrument protobuf classes-->
+            <plugin>
+                <groupId>com.github.auties00</groupId>
+                <artifactId>protobuf-serialization-plugin</artifactId>
+                <version>${protobuf.plugin.version}</version>
+                <executions>
+                    <execution>
+                        <id>protobuf</id>
+                        <phase>compile</phase>
+                        <goals>
+                            <goal>protobuf</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
             <!-- Compile the project-->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -136,11 +230,6 @@
                             <groupId>org.projectlombok</groupId>
                             <artifactId>lombok</artifactId>
                             <version>${lombok.version}</version>
-                        </annotationProcessorPath>
-                        <annotationProcessorPath>
-                            <groupId>com.github.auties00</groupId>
-                            <artifactId>protobuf-serializer-performance</artifactId>
-                            <version>${protoc.version}</version>
                         </annotationProcessorPath>
                     </annotationProcessorPaths>
                     <compilerArgs>
@@ -164,83 +253,6 @@
                 </dependencies>
                 <configuration>
                     <argLine>--enable-preview</argLine>
-                </configuration>
-            </plugin>
-
-            <!-- Attach the sourcecode -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-source-plugin</artifactId>
-                <version>${maven.source.plugin.version}</version>
-                <executions>
-                    <execution>
-                        <id>attach-sources</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- Delombok the project to prepare for javadoc generation -->
-            <plugin>
-                <groupId>com.github.auties00</groupId>
-                <artifactId>delombok-plugin</artifactId>
-                <version>${delombok.plugin.version}</version>
-                <configuration>
-                    <rootDirectory>${project.build.sourceDirectory}</rootDirectory>
-                    <outputDirectory>${delombok.output}</outputDirectory>
-                    <excludedFiles>
-                        <excludedFile>module-info.java</excludedFile>
-                    </excludedFiles>
-                    <parameters>
-                        <encoding>UTF-8</encoding>
-                    </parameters>
-                </configuration>
-                <executions>
-                    <execution>
-                        <phase>process-sources</phase>
-                        <goals>
-                            <goal>delombok</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-
-            <!-- Generate and attach javadocs from delomboked source -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-javadoc-plugin</artifactId>
-                <version>${maven.javadoc.plugin.version}</version>
-                <executions>
-                    <execution>
-                        <id>attach-javadocs</id>
-                        <goals>
-                            <goal>jar</goal>
-                        </goals>
-                    </execution>
-                </executions>
-                <configuration>
-                    <sourcepath>${delombok.output}</sourcepath>
-                    <release>${java.version}</release>
-                    <failOnError>true</failOnError>
-                    <additionalOptions>--enable-preview</additionalOptions>
-                    <show>private</show>
-                    <debug>true</debug>
-                    <verbose>true</verbose>
-                </configuration>
-            </plugin>
-
-            <!-- Deploy the result-->
-            <plugin>
-                <groupId>org.sonatype.plugins</groupId>
-                <artifactId>nexus-staging-maven-plugin</artifactId>
-                <version>${maven.nexus.plugin.version}</version>
-                <extensions>true</extensions>
-                <configuration>
-                    <serverId>ossrh</serverId>
-                    <nexusUrl>https://s01.oss.sonatype.org/</nexusUrl>
-                    <autoReleaseAfterClose>true</autoReleaseAfterClose>
                 </configuration>
             </plugin>
         </plugins>
@@ -270,7 +282,7 @@
         </dependency>
         <dependency>
             <groupId>com.github.auties00</groupId>
-            <artifactId>protobuf-serializer-performance</artifactId>
+            <artifactId>protobuf-base</artifactId>
             <version>${protoc.version}</version>
         </dependency>
         <dependency>
