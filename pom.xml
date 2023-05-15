@@ -202,8 +202,8 @@
             <!-- Instrument protobuf classes-->
             <plugin>
                 <groupId>com.github.auties00</groupId>
-                <artifactId>protobuf-serialization-plugin</artifactId>
-                <version>${protobuf.plugin.version}</version>
+                <artifactId>protobuf-base</artifactId>
+                <version>${protoc.version}</version>
                 <executions>
                     <execution>
                         <id>protobuf</id>
