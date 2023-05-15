@@ -3,11 +3,10 @@ package it.auties.whatsapp.controller;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import it.auties.bytes.Bytes;
-import it.auties.whatsapp.model.sync.HistorySyncMessage;
-import it.auties.whatsapp.util.Protobuf;
 import it.auties.whatsapp.api.*;
 import it.auties.whatsapp.crypto.AesGmc;
 import it.auties.whatsapp.crypto.Hkdf;
+import it.auties.whatsapp.exception.UnknownSessionException;
 import it.auties.whatsapp.listener.Listener;
 import it.auties.whatsapp.model.chat.Chat;
 import it.auties.whatsapp.model.chat.ChatEphemeralTimer;
@@ -33,9 +32,8 @@ import it.auties.whatsapp.model.request.Request;
 import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentPlatform;
 import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentReleaseChannel;
 import it.auties.whatsapp.model.signal.auth.Version;
-import it.auties.whatsapp.util.Clock;
-import it.auties.whatsapp.util.ProxyAuthenticator;
-import it.auties.whatsapp.util.Spec;
+import it.auties.whatsapp.model.sync.HistorySyncMessage;
+import it.auties.whatsapp.util.*;
 import lombok.Builder.Default;
 import lombok.Getter;
 import lombok.NonNull;
@@ -100,7 +98,7 @@ public final class Store extends Controller<Store> {
      */
     @Getter
     @Setter
-    private boolean isBusiness;
+    private boolean business;
 
     /**
      * The hash of the companion associated with this session
@@ -337,10 +335,9 @@ public final class Store extends Controller<Store> {
     private UserAgentReleaseChannel releaseChannel = UserAgentReleaseChannel.RELEASE;
 
     /**
-     * The phone number of the associated companion
+     * The phone numberWithoutPrefix of the associated companion
      */
     @Getter
-    @Setter
     private PhoneNumber phoneNumber;
 
     /**
@@ -378,63 +375,76 @@ public final class Store extends Controller<Store> {
     /**
      * Returns the store saved in memory or constructs a new clean instance
      *
-     * @param uuid           the uuid of the session to load, can be null
-     * @param connectionType the non-null connection type
-     * @param clientType     the non-null type of the client
-     * @param serializer     the non-null serializer
+     * @param phoneNumber the non-null phone numberWithoutPrefix of the session to load
+     * @param clientType  the non-null type of the client
+     * @param required whether the session needs to exist
      * @return a non-null store
      */
-    public static Store of(UUID uuid, @NonNull ConnectionType connectionType, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
-        return switch (connectionType) {
-            case NEW -> {
-                var sessionUuid = Objects.requireNonNullElseGet(uuid, UUID::randomUUID);
-                yield of(sessionUuid, clientType, serializer);
-            }
-            case FIRST -> {
-                var sessionUuid = Objects.requireNonNullElseGet(serializer.findIds(clientType).peekFirst(), UUID::randomUUID);
-                yield of(sessionUuid, clientType, serializer);
-            }
-            case LAST -> {
-                var sessionUuid = Objects.requireNonNullElseGet(serializer.findIds(clientType).peekLast(), UUID::randomUUID);
-                yield of(sessionUuid, clientType, serializer);
-            }
-        };
+    public static Store of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, boolean required) {
+        return of(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance(), required);
     }
 
     /**
      * Returns the store saved in memory or constructs a new clean instance
      *
-     * @param uuid       the non-null uuid of the session
-     * @param clientType the non-null type of the client
-     * @param serializer the non-null serializer
+     * @param phoneNumber the non-null phone numberWithoutPrefix of the session to load
+     * @param clientType  the non-null type of the client
+     * @param serializer  the non-null serializer
+     * @param required whether the session needs to exist
      * @return a non-null store
      */
-    public static Store of(@NonNull UUID uuid, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
-        var result = serializer.deserializeStore(clientType, uuid)
-                .map(store -> store.serializer(serializer))
-                .orElseGet(() -> random(uuid, clientType, serializer));
-        serializer.attributeStore(result); // Run async
-        return result;
+    public static Store of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer, boolean required) {
+        Validate.isTrue(uuid != null || phoneNumber != null || !required, UnknownSessionException.class);
+        var result = phoneNumber == null ? serializer.deserializeStore(clientType, uuid) : serializer.deserializeStore(clientType, phoneNumber);
+        if(required && result.isEmpty()){
+            if(phoneNumber != null) {
+                throw new UnknownSessionException(phoneNumber);
+            }
+
+            throw new UnknownSessionException(uuid);
+        }
+        var store = result.map(entry -> entry.serializer(serializer))
+                .orElseGet(() -> random(uuid, phoneNumber, clientType, serializer));
+        serializer.attributeStore(store); // Run async
+        return store;
     }
 
     /**
      * Constructs a new default instance of WhatsappStore
      *
-     * @param uuid the uuid of the session to create, can be null
-     * @param clientType the non-null type of the client
-     * @param serializer the non-null serializer
+     * @param uuid        the uuid of the session to create, can be null(a random one will be used)
+     * @param phoneNumber the phone numberWithoutPrefix of the session to create, can be null(it will be attributed later)
+     * @param clientType  the non-null type of the client
      * @return a non-null store
      */
-    public static Store random(UUID uuid, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
-        return Store.builder()
+    public static Store random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType) {
+        return random(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance());
+    }
+
+    /**
+     * Constructs a new default instance of WhatsappStore
+     *
+     * @param uuid        the uuid of the session to create, can be null(a random one will be used)
+     * @param phoneNumber the phone numberWithoutPrefix of the session to create, can be null(it will be attributed later)
+     * @param clientType  the non-null type of the client
+     * @param serializer  the non-null serializer
+     * @return a non-null store
+     */
+    public static Store random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+        var result = Store.builder()
                 .serializer(serializer)
                 .clientType(clientType)
+                .phoneNumber(PhoneNumber.ofNullable(phoneNumber).orElse(null))
                 .osType(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_OS_TYPE : Spec.Whatsapp.DEFAULT_MOBILE_OS_TYPE)
                 .osVersion(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_OS_VERSION : Spec.Whatsapp.DEFAULT_MOBILE_OS_VERSION)
                 .model(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_DEVICE_MODEL : Spec.Whatsapp.DEFAULT_MOBILE_DEVICE_MODEL)
                 .manufacturer(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_DEVICE_MANUFACTURER : Spec.Whatsapp.DEFAULT_MOBILE_DEVICE_MANUFACTURER)
                 .uuid(Objects.requireNonNullElseGet(uuid, UUID::randomUUID))
                 .build();
+        if(phoneNumber != null){
+            serializer.linkPhoneNumber(result);
+        }
+        return result;
     }
 
     /**
@@ -779,8 +789,13 @@ public final class Store extends Controller<Store> {
         if(info.fromMe() && jid != null && !Objects.equals(info.senderJid().user(), jid.user())){
             info.key().senderJid(jid.toWhatsappJid());
         }
-        info.key().senderJid().ifPresent(senderJid -> attributeSender(info, senderJid));
-        info.message().contentWithContext().map(ContextualMessage::contextInfo).ifPresent(this::attributeContext);
+        info.key()
+                .senderJid()
+                .ifPresent(senderJid -> attributeSender(info, senderJid));
+        info.message()
+                .contentWithContext()
+                .map(ContextualMessage::contextInfo)
+                .ifPresent(this::attributeContext);
         processMessage(info);
         return info;
     }
@@ -1117,12 +1132,11 @@ public final class Store extends Controller<Store> {
      *
      * @return a non-null version
      */
-    public Version version(){
-        if(version == null){
-            this.version = Version.latest(clientType);
-        }
-
-        return version;
+    public CompletableFuture<Version> version(){
+        return switch (clientType){
+            case WEB_CLIENT -> MetadataHelper.getWebVersion();
+            case APP_CLIENT -> MetadataHelper.getMobileVersion(osType);
+        };
     }
 
     /**
@@ -1139,6 +1153,17 @@ public final class Store extends Controller<Store> {
         }
 
         this.proxy = proxy;
+        return this;
+    }
+
+    /**
+     * Sets the phone numberWithoutPrefix used by this session
+     *
+     * @return the same instance
+     */
+    public Store phoneNumber(@NonNull PhoneNumber phoneNumber){
+        this.phoneNumber = phoneNumber;
+        serializer.linkPhoneNumber(this);
         return this;
     }
 

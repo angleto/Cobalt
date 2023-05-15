@@ -13,6 +13,10 @@ public final class WebOptionsBuilder extends OptionsBuilder<WebOptionsBuilder> {
         super(connectionUuid, serializer, connectionType, ClientType.WEB_CLIENT);
     }
 
+    public WebOptionsBuilder(long phoneNumber, ControllerSerializer serializer, ConnectionType connectionType) {
+        super(phoneNumber, serializer, connectionType, ClientType.WEB_CLIENT);
+    }
+
     /**
      * Sets how much chat history Whatsapp should send when the QR is first scanned.
      * By default, one year

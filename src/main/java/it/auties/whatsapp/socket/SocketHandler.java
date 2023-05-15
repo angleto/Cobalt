@@ -155,6 +155,9 @@ public class SocketHandler implements SocketListener {
                     .thenRunAsync(() -> state(SocketState.CONNECTED));
             return;
         }
+        if(keys.readKey() == null){
+            return;
+        }
         var plainText = AesGmc.decrypt(keys.readCounter(true), message, keys.readKey().toByteArray());
         var decoder = new Decoder();
         var node = decoder.readNode(plainText);
@@ -253,7 +256,7 @@ public class SocketHandler implements SocketListener {
                 }
                 var uuid = UUID.randomUUID();
                 this.keys = Keys.random(uuid, store.clientType(), store.serializer());
-                this.store = Store.random(uuid, store.clientType(), store.serializer());
+                this.store = Store.random(uuid, store.phoneNumber().number(), store.clientType(), store.serializer());
                 store.qrHandler(qrHandler);
                 store.errorHandler(errorHandler);
                 store.socketExecutor(socketExecutor);

@@ -1,6 +1,7 @@
 package it.auties.whatsapp;
 
 import it.auties.whatsapp.api.Whatsapp;
+import it.auties.whatsapp.model.mobile.VerificationCodeMethod;
 import org.junit.jupiter.api.Test;
 
 import java.util.Scanner;
@@ -13,7 +14,7 @@ public class MobileTest {
         Whatsapp.mobileBuilder()
                 .lastConnection()
                 .unregistered()
-                .register(393495089819L, MobileTest::onScanCode)
+                .register(393495089819L, VerificationCodeMethod.CALL,  MobileTest::onScanCode)
                 .join()
                 .addLoggedInListener(MobileTest::onConnected)
                 .addContactsListener((api, contacts) -> System.out.printf("Contacts: %s%n", contacts.size()))
@@ -27,9 +28,7 @@ public class MobileTest {
     }
 
     private static void onConnected(Whatsapp api) {
-        api.unlinkCompanions().join();
         System.out.println("Connected to mobile api");
-        api.linkCompanion("2@Q8cjUDZhhqW9mFFn5bMaGm9WFhQaCs+ZCoAPHozUA1RgJmficSMkt+1YeE0tkOjTTK92k89mQ8u0qA==,xYwjBykFvbvZCNrC+wncFGDa7eQCsPMCZwhzNnxYRgM=,IYmyatRvixSxt135z7luD6yZcDCuyI4KABhrdrndAFI=,KbXH9sj4bEmI4Kp8BBX+A3KboerISLAisWCiLSYxKzI=").join();
     }
 
     private static CompletableFuture<String> onScanCode() {
