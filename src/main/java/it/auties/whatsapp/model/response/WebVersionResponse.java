@@ -1,8 +1,12 @@
 package it.auties.whatsapp.model.response;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
+import lombok.Builder;
+import lombok.extern.jackson.Jacksonized;
 
-public record AppVersionResponse(@JsonProperty("isBroken") boolean broken,
+@Jacksonized
+@Builder
+public record WebVersionResponse(@JsonProperty("isBroken") boolean broken,
                                  @JsonProperty("isBelowSoft") boolean outdatedSoft,
                                  @JsonProperty("isBelowHard") boolean outdatedHard,
                                  @JsonProperty("hardUpdateTime") long outdatedUpdateTime,
