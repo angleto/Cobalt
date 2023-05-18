@@ -842,7 +842,7 @@ class StreamHandler {
         badMac.set(false);
     }
 
-    private ScheduledExecutorService getOrCreateService(){
+    private synchronized ScheduledExecutorService getOrCreateService(){
         if(service == null){
             service = Executors.newSingleThreadScheduledExecutor();
         }

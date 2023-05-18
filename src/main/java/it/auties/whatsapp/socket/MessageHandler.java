@@ -88,7 +88,7 @@ class MessageHandler {
         return Caffeine.newBuilder().expireAfterWrite(duration).build();
     }
 
-    protected CompletableFuture<Void> encode(MessageSendRequest request) {
+    protected synchronized CompletableFuture<Void> encode(MessageSendRequest request) {
         return runner.runAsync(() -> encodeMessageNode(request)
                 .thenRunAsync(() -> attributeOutgoingMessage(request))
                 .exceptionallyAsync(throwable -> onEncodeError(request, throwable)));
@@ -427,7 +427,7 @@ class MessageHandler {
         builder.createOutgoing(registrationId, identity, signedKey, key);
     }
 
-    public void decode(Node node) {
+    public synchronized void decode(Node node) {
         try {
             var businessName = getBusinessName(node);
             var encrypted = node.findNodes("enc");

@@ -89,7 +89,7 @@ public class MetadataHelper {
         }
     }
 
-    private WhatsappApk getWhatsappData() {
+    private synchronized WhatsappApk getWhatsappData() {
         try {
             if(cachedApk != null){
                 return cachedApk;

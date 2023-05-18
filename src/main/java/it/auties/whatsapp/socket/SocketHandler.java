@@ -194,7 +194,7 @@ public class SocketHandler implements SocketListener {
         handleFailure(UNKNOWN, throwable);
     }
 
-    public CompletableFuture<Void> connect() {
+    public synchronized CompletableFuture<Void> connect() {
         if (loginFuture == null || loginFuture.isDone()) {
             this.loginFuture = new CompletableFuture<>();
         }
@@ -785,7 +785,7 @@ public class SocketHandler implements SocketListener {
         }
     }
 
-    private ExecutorService getOrCreateListenersService(){
+    private synchronized ExecutorService getOrCreateListenersService(){
         if(listenersService == null || listenersService.isShutdown()){
             listenersService = Executors.newCachedThreadPool();
         }

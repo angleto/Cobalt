@@ -212,7 +212,7 @@ public class DefaultControllerSerializer implements ControllerSerializer {
     }
 
     @Override
-    public CompletableFuture<Void> attributeStore(Store store) {
+    public synchronized CompletableFuture<Void> attributeStore(Store store) {
         var oldTask = deserializer.get();
         if (oldTask != null) {
             return oldTask;
@@ -341,7 +341,7 @@ public class DefaultControllerSerializer implements ControllerSerializer {
             }
         }
 
-        private static SmileFile of(@NonNull Path file) {
+        private static synchronized SmileFile of(@NonNull Path file) {
             var knownInstance = instances.get(file);
             if (knownInstance != null) {
                 return knownInstance;
