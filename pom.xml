@@ -112,7 +112,6 @@
                             <sourcepath>${delombok.output}</sourcepath>
                             <release>${java.version}</release>
                             <failOnError>true</failOnError>
-                            <additionalOptions>--enable-preview</additionalOptions>
                             <show>private</show>
                             <debug>true</debug>
                             <verbose>true</verbose>
@@ -172,7 +171,7 @@
         <maven.nexus.plugin.version>1.6.13</maven.nexus.plugin.version>
         <bouncy.castle.version>1.70</bouncy.castle.version>
         <zxing.version>3.5.1</zxing.version>
-        <protoc.version>2.0</protoc.version>
+        <protoc.version>2.0.1</protoc.version>
         <lombok.version>1.18.26</lombok.version>
         <junit.version>5.9.2</junit.version>
         <jna.version>5.12.1</jna.version>
@@ -191,7 +190,7 @@
         <libphonenumber.version>8.13.7</libphonenumber.version>
         <pdfbox.version>2.0.27</pdfbox.version>
         <poi.version>5.2.3</poi.version>
-        <protobuf.plugin.version>2.0</protobuf.plugin.version>
+        <protobuf.plugin.version>2.0.1</protobuf.plugin.version>
         <delombok.plugin.version>1.18.24.1</delombok.plugin.version>
         <delombok.input>${project.basedir}/src/main/java</delombok.input>
         <delombok.output>${project.build.directory}/delombok</delombok.output>
@@ -232,9 +231,6 @@
                             <version>${lombok.version}</version>
                         </annotationProcessorPath>
                     </annotationProcessorPaths>
-                    <compilerArgs>
-                        <compilerArg>--enable-preview</compilerArg>
-                    </compilerArgs>
                     <failOnError>true</failOnError>
                 </configuration>
             </plugin>
@@ -251,9 +247,6 @@
                         <version>${junit.version}</version>
                     </dependency>
                 </dependencies>
-                <configuration>
-                    <argLine>--enable-preview</argLine>
-                </configuration>
             </plugin>
         </plugins>
     </build>
