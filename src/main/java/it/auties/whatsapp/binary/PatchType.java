@@ -20,6 +20,6 @@ public enum PatchType {
 
     @Override
     public String toString() {
-        return name().toLowerCase(Locale.ROOT);
+        return name();
     }
 }
