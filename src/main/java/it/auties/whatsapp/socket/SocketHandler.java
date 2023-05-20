@@ -207,8 +207,7 @@ public class SocketHandler implements SocketListener {
 
         this.session = new SocketSession(store.proxy().orElse(null), store.socketExecutor());
         loginFuture = session.connect(this)
-                .thenRunAsync(this::markConnected)
-                .thenCompose(ignored -> loginFuture);
+                .thenRunAsync(this::markConnected);
         return loginFuture;
     }
 
