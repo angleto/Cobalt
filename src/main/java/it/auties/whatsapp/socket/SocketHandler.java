@@ -195,21 +195,13 @@ public class SocketHandler implements SocketListener {
     }
 
     public synchronized CompletableFuture<Void> connect() {
-        if (loginFuture == null || loginFuture.isDone()) {
-            this.loginFuture = new CompletableFuture<>();
-        }
-
-        if (logoutFuture == null || logoutFuture.isDone()) {
-            this.logoutFuture = new CompletableFuture<>();
-        }
-
         if(state == SocketState.CONNECTED){
             return loginFuture;
         }
 
         this.session = new SocketSession(store.proxy().orElse(null), store.socketExecutor());
-        return session.connect(this)
-                .thenCompose(ignored -> loginFuture);
+        loginFuture = session.connect(this);
+        return loginFuture;
     }
 
     public CompletableFuture<Void> loginFuture(){
