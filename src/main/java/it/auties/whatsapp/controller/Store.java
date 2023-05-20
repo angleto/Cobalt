@@ -1,7 +1,6 @@
 package it.auties.whatsapp.controller;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonSetter;
 import it.auties.bytes.Bytes;
 import it.auties.whatsapp.api.*;
 import it.auties.whatsapp.crypto.AesGmc;
@@ -17,6 +16,7 @@ import it.auties.whatsapp.model.info.ContextInfo;
 import it.auties.whatsapp.model.info.MessageInfo;
 import it.auties.whatsapp.model.media.MediaConnection;
 import it.auties.whatsapp.model.message.model.ContextualMessage;
+import it.auties.whatsapp.model.message.model.Message;
 import it.auties.whatsapp.model.message.model.MessageKey;
 import it.auties.whatsapp.model.message.standard.PollCreationMessage;
 import it.auties.whatsapp.model.message.standard.PollUpdateMessage;
@@ -335,7 +335,7 @@ public final class Store extends Controller<Store> {
     private UserAgentReleaseChannel releaseChannel = UserAgentReleaseChannel.RELEASE;
 
     /**
-     * The phone numberWithoutPrefix of the associated companion
+     * The phone number of the associated companion
      */
     @Getter
     private PhoneNumber phoneNumber;
@@ -375,7 +375,7 @@ public final class Store extends Controller<Store> {
     /**
      * Returns the store saved in memory or constructs a new clean instance
      *
-     * @param phoneNumber the non-null phone numberWithoutPrefix of the session to load
+     * @param phoneNumber the non-null phone number of the session to load
      * @param clientType  the non-null type of the client
      * @param required whether the session needs to exist
      * @return a non-null store
@@ -387,7 +387,7 @@ public final class Store extends Controller<Store> {
     /**
      * Returns the store saved in memory or constructs a new clean instance
      *
-     * @param phoneNumber the non-null phone numberWithoutPrefix of the session to load
+     * @param phoneNumber the non-null phone number of the session to load
      * @param clientType  the non-null type of the client
      * @param serializer  the non-null serializer
      * @param required whether the session needs to exist
@@ -413,7 +413,7 @@ public final class Store extends Controller<Store> {
      * Constructs a new default instance of WhatsappStore
      *
      * @param uuid        the uuid of the session to create, can be null(a random one will be used)
-     * @param phoneNumber the phone numberWithoutPrefix of the session to create, can be null(it will be attributed later)
+     * @param phoneNumber the phone number of the session to create, can be null(it will be attributed later)
      * @param clientType  the non-null type of the client
      * @return a non-null store
      */
@@ -425,7 +425,7 @@ public final class Store extends Controller<Store> {
      * Constructs a new default instance of WhatsappStore
      *
      * @param uuid        the uuid of the session to create, can be null(a random one will be used)
-     * @param phoneNumber the phone numberWithoutPrefix of the session to create, can be null(it will be attributed later)
+     * @param phoneNumber the phone number of the session to create, can be null(it will be attributed later)
      * @param clientType  the non-null type of the client
      * @param serializer  the non-null serializer
      * @return a non-null store
@@ -454,7 +454,15 @@ public final class Store extends Controller<Store> {
      * @return a non-null optional
      */
     public Optional<Contact> findContactByJid(ContactJidProvider jid) {
-        return jid == null ? Optional.empty() : Optional.ofNullable(contacts.get(jid.toJid()));
+        if (jid == null) {
+            return Optional.empty();
+        }
+
+        if (jid instanceof Contact contact) {
+            return Optional.of(contact);
+        }
+
+        return Optional.ofNullable(contacts.get(jid.toJid()));
     }
 
     /**
@@ -821,11 +829,13 @@ public final class Store extends Controller<Store> {
     }
 
     private void processMessage(MessageInfo info) {
-        switch (info.message().content()) {
-            case PollCreationMessage pollCreationMessage -> handlePollCreation(info, pollCreationMessage);
-            case PollUpdateMessage pollUpdateMessage -> handlePollUpdate(info, pollUpdateMessage);
-            case ReactionMessage reactionMessage -> handleReactionMessage(info, reactionMessage);
-            default -> {}
+        Message content = info.message().content();
+        if (Objects.requireNonNull(content) instanceof PollCreationMessage pollCreationMessage) {
+            handlePollCreation(info, pollCreationMessage);
+        } else if (content instanceof PollUpdateMessage pollUpdateMessage) {
+            handlePollUpdate(info, pollUpdateMessage);
+        } else if (content instanceof ReactionMessage reactionMessage) {
+            handleReactionMessage(info, reactionMessage);
         }
     }
 
@@ -1144,20 +1154,19 @@ public final class Store extends Controller<Store> {
      *
      * @return the same instance
      */
-    @JsonSetter
     public Store proxy(URI proxy) {
         if(proxy != null && proxy.getUserInfo() != null){
             ProxyAuthenticator.register(proxy);
         }else if(proxy == null && this.proxy != null && this.proxy.getUserInfo() != null){
             ProxyAuthenticator.unregister(this.proxy);
         }
-
+        
         this.proxy = proxy;
         return this;
     }
 
     /**
-     * Sets the phone numberWithoutPrefix used by this session
+     * Sets the phone number used by this session
      *
      * @return the same instance
      */
@@ -1185,5 +1194,16 @@ public final class Store extends Controller<Store> {
     @Override
     public void serialize(boolean async) {
         serializer.serializeStore(this, async);
+    }
+
+    public static abstract class StoreBuilder<C extends Store, B extends StoreBuilder<C, B>> extends ControllerBuilder<Store, C, B> {
+        public StoreBuilder<C, B> proxy(URI proxy) {
+            if(proxy != null && proxy.getUserInfo() != null){
+                ProxyAuthenticator.register(proxy);
+            }
+
+            this.proxy = proxy;
+            return this;
+        }
     }
 }
