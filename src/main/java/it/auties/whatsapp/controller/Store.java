@@ -324,6 +324,16 @@ public final class Store extends Controller<Store> {
     @Default
     private boolean autodetectListeners = true;
 
+
+    /**
+     * Whether updates about the presence of the session should be sent automatically to Whatsapp
+     * For example, when the bot is started, by the default the status of the status of the companion is changed to online.
+     */
+    @Getter
+    @Setter
+    @Default
+    private boolean automaticPresenceUpdates = true;
+
     /**
      * The release channel to use when connecting to Whatsapp
      * This should allow the use of beta features
@@ -335,18 +345,12 @@ public final class Store extends Controller<Store> {
     private UserAgentReleaseChannel releaseChannel = UserAgentReleaseChannel.RELEASE;
 
     /**
-     * The phone number of the associated companion
-     */
-    @Getter
-    private PhoneNumber phoneNumber;
-
-    /**
      * The operating system of the associated companion
      */
     @Getter
     @Setter
     @NonNull
-    private UserAgentPlatform osType;
+    private UserAgentPlatform os;
 
     /**
      * The operating system's version of the associated companion
@@ -373,11 +377,12 @@ public final class Store extends Controller<Store> {
     private String manufacturer;
 
     /**
-     * Returns the store saved in memory or constructs a new clean instance
+     * Returns the store saved in memory or constructs a new clean instance if {@code !required}
      *
-     * @param phoneNumber the non-null phone number of the session to load
+     * @param uuid        the uuid of the session to load, can be null
+     * @param phoneNumber the phone number of the session to load, can be null
      * @param clientType  the non-null type of the client
-     * @param required whether the session needs to exist
+     * @param required    whether the session needs to exist
      * @return a non-null store
      */
     public static Store of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, boolean required) {
@@ -385,12 +390,13 @@ public final class Store extends Controller<Store> {
     }
 
     /**
-     * Returns the store saved in memory or constructs a new clean instance
+     * Returns the store saved in memory or constructs a new clean instance if {@code !required}
      *
-     * @param phoneNumber the non-null phone number of the session to load
+     * @param uuid        the uuid of the session to load, can be null
+     * @param phoneNumber the phone number of the session to load, can be null
      * @param clientType  the non-null type of the client
      * @param serializer  the non-null serializer
-     * @param required whether the session needs to exist
+     * @param required    whether the session needs to exist
      * @return a non-null store
      */
     public static Store of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer, boolean required) {
@@ -412,8 +418,8 @@ public final class Store extends Controller<Store> {
     /**
      * Constructs a new default instance of WhatsappStore
      *
-     * @param uuid        the uuid of the session to create, can be null(a random one will be used)
-     * @param phoneNumber the phone number of the session to create, can be null(it will be attributed later)
+     * @param uuid        the uuid of the session to create, can be null
+     * @param phoneNumber the phone number of the session to create, can be null
      * @param clientType  the non-null type of the client
      * @return a non-null store
      */
@@ -424,8 +430,8 @@ public final class Store extends Controller<Store> {
     /**
      * Constructs a new default instance of WhatsappStore
      *
-     * @param uuid        the uuid of the session to create, can be null(a random one will be used)
-     * @param phoneNumber the phone number of the session to create, can be null(it will be attributed later)
+     * @param uuid        the uuid of the session to create, can be null
+     * @param phoneNumber the phone number of the session to create, can be null
      * @param clientType  the non-null type of the client
      * @param serializer  the non-null serializer
      * @return a non-null store
@@ -435,7 +441,7 @@ public final class Store extends Controller<Store> {
                 .serializer(serializer)
                 .clientType(clientType)
                 .phoneNumber(PhoneNumber.ofNullable(phoneNumber).orElse(null))
-                .osType(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_OS_TYPE : Spec.Whatsapp.DEFAULT_MOBILE_OS_TYPE)
+                .os(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_OS_TYPE : Spec.Whatsapp.DEFAULT_MOBILE_OS_TYPE)
                 .osVersion(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_OS_VERSION : Spec.Whatsapp.DEFAULT_MOBILE_OS_VERSION)
                 .model(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_DEVICE_MODEL : Spec.Whatsapp.DEFAULT_MOBILE_DEVICE_MODEL)
                 .manufacturer(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.DEFAULT_WEB_DEVICE_MANUFACTURER : Spec.Whatsapp.DEFAULT_MOBILE_DEVICE_MANUFACTURER)
@@ -659,6 +665,15 @@ public final class Store extends Controller<Store> {
      */
     public void resolveAllPendingRequests() {
         requests.values().forEach(request -> request.complete(null, false));
+    }
+
+    /**
+     * Returns an immutable collection of pending requests
+     *
+     * @return a non-null collection
+     */
+    public Collection<Request> pendingRequests() {
+        return Collections.unmodifiableCollection(requests.values());
     }
 
     /**
@@ -1145,7 +1160,7 @@ public final class Store extends Controller<Store> {
     public CompletableFuture<Version> version(){
         return switch (clientType){
             case WEB_CLIENT -> MetadataHelper.getWebVersion();
-            case APP_CLIENT -> MetadataHelper.getMobileVersion(osType);
+            case APP_CLIENT -> MetadataHelper.getMobileVersion(os, business);
         };
     }
 
@@ -1162,17 +1177,6 @@ public final class Store extends Controller<Store> {
         }
         
         this.proxy = proxy;
-        return this;
-    }
-
-    /**
-     * Sets the phone number used by this session
-     *
-     * @return the same instance
-     */
-    public Store phoneNumber(@NonNull PhoneNumber phoneNumber){
-        this.phoneNumber = phoneNumber;
-        serializer.linkPhoneNumber(this);
         return this;
     }
 
