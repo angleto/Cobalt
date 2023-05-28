@@ -2,6 +2,7 @@ package it.auties.whatsapp;
 
 import it.auties.whatsapp.api.Whatsapp;
 import it.auties.whatsapp.model.mobile.VerificationCodeMethod;
+import lombok.SneakyThrows;
 import org.junit.jupiter.api.Test;
 
 import java.util.Scanner;
@@ -11,23 +12,23 @@ public class MobileTest {
     @Test
     public void run() {
         Whatsapp.mobileBuilder()
-                .newConnection()
+                .lastConnection()
                 .unregistered()
-                .register(17154086027L, VerificationCodeMethod.CALL,  MobileTest::onScanCode)
+                .register(17405281037L, VerificationCodeMethod.SMS,  MobileTest::onScanCode)
                 .join()
-                .addLoggedInListener(MobileTest::onConnected)
-                .addContactsListener((api, contacts) -> System.out.printf("Contacts: %s%n", contacts.size()))
-                .addChatsListener(chats -> System.out.printf("Chats: %s%n", chats.size()))
                 .addNodeReceivedListener(incoming -> System.out.printf("Received node %s%n", incoming))
                 .addNodeSentListener(outgoing -> System.out.printf("Sent node %s%n", outgoing))
-                .addDisconnectedListener(reason -> System.out.printf("Disconnected: %s%n", reason))
-                .connect()
-                .join()
-                .awaitDisconnection();
+                .addLoggedInListener(MobileTest::onConnected)
+                .connectAndAwait()
+                .join();
     }
 
+    @SneakyThrows
     private static void onConnected(Whatsapp api) {
         System.out.println("Connected to mobile api");
+        api.unlinkCompanions().join();
+        api.linkCompanion("2@TgG+fmDzN2g5bvJrcbt8IKbLaxgicWSHI8pF9WYJXhX1hGCP/RiAiJsjKJDNmsSjkDTMsbNBb1NHfg==,5lBcuqkIjoJPYrQB8HOson1xKvwShXLzIFTjYtrZ0kw=,ZMAvonat2EAKMvjdSePPrwlAR/jbZk31FMcioWtwxSQ=,i4+khF4NBD0NMp2VYItWXMDzWWiIIkzwx2bHcXCA6bk=")
+                .join();
     }
 
     private static CompletableFuture<String> onScanCode() {

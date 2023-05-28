@@ -3,8 +3,6 @@ package it.auties.whatsapp.socket;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import it.auties.bytes.Bytes;
 import it.auties.curve25519.Curve25519;
-import it.auties.whatsapp.model.request.Request;
-import it.auties.whatsapp.util.Protobuf;
 import it.auties.whatsapp.api.ClientType;
 import it.auties.whatsapp.api.DisconnectReason;
 import it.auties.whatsapp.api.ErrorHandler.Location;
@@ -32,12 +30,15 @@ import it.auties.whatsapp.model.privacy.PrivacySettingValue;
 import it.auties.whatsapp.model.request.Attributes;
 import it.auties.whatsapp.model.request.MessageSendRequest;
 import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.request.Request;
 import it.auties.whatsapp.model.response.ContactStatusResponse;
 import it.auties.whatsapp.model.signal.auth.DeviceIdentity;
 import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentity;
 import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentityHMAC;
+import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentPlatform;
 import it.auties.whatsapp.model.signal.keypair.SignalPreKeyPair;
 import it.auties.whatsapp.util.Clock;
+import it.auties.whatsapp.util.Protobuf;
 import it.auties.whatsapp.util.Validate;
 import lombok.NonNull;
 import lombok.experimental.Accessors;
@@ -426,6 +427,7 @@ class StreamHandler {
         var companionJid = socketHandler.store().jid().toWhatsappJid();
         var companionDevice = devices.remove(companionJid);
         devices.put(companionJid, companionDevice);
+        socketHandler.store().linkedDevicesKeys(devices);
         socketHandler.onDevices(devices);
         var keyIndexListNode = child.findNode("key-index-list")
                 .orElseThrow(() -> new NoSuchElementException("Missing index key node from device sync"));
@@ -554,6 +556,14 @@ class StreamHandler {
             socketHandler.handleFailure(CRYPTOGRAPHY, new RuntimeException("Detected a bad mac, unresolved nodes:\n%s".formatted(unresolvedNodes)));
             return;
         }
+
+        // TODO: This is to fix Node[description=stream:error, content=[Node[description=ack, attributes={id=3EB04EF705C35A660AC5, type=text, class=message}]]]
+        // Should be actually fixed
+        if(node.hasNode("ack")){
+            socketHandler.disconnect(DisconnectReason.RECONNECTING);
+            return;
+        }
+
         var statusCode = node.attributes().getInt("code");
         switch (statusCode) {
             case 515, 503 -> socketHandler.disconnect(DisconnectReason.RECONNECTING);
@@ -586,7 +596,7 @@ class StreamHandler {
         var loggedInFuture = queryInitialInfo()
                 .thenRunAsync(this::onInitialInfo)
                 .exceptionallyAsync(throwable -> socketHandler.handleFailure(LOGIN, throwable));
-        if(socketHandler.store().clientType() == ClientType.APP_CLIENT){
+        if(socketHandler.store().clientType() == ClientType.MOBILE){
             socketHandler.store().initialSync(true);
         }
 
@@ -621,7 +631,7 @@ class StreamHandler {
 
     private CompletableFuture<Void> queryInitialInfo() {
         updateSelfPresence();
-        if(socketHandler.store().clientType() == ClientType.APP_CLIENT) {
+        if(socketHandler.store().clientType() == ClientType.MOBILE) {
             socketHandler.sendQuery("get", "urn:xmpp:whatsapp:push", Node.ofAttributes("config", Map.of("version", 1)));
         }else {
             socketHandler.sendQuery("get", "w", Node.of("props"))
@@ -646,7 +656,9 @@ class StreamHandler {
             return;
         }
 
-        socketHandler.sendWithNoResponse(Node.ofAttributes("presence", Map.of("type", "available")));
+        socketHandler.sendWithNoResponse(Node.ofAttributes("presence", Map.of("type", "available")))
+                .thenRun(() -> socketHandler.store().online(true))
+                .exceptionally(exception -> socketHandler.handleFailure(STREAM, exception));
         socketHandler.store()
                 .findContactByJid(socketHandler.store().jid().toWhatsappJid())
                 .ifPresent(entry -> entry.lastKnownPresence(ContactStatus.AVAILABLE).lastSeen(ZonedDateTime.now()));
@@ -850,8 +862,23 @@ class StreamHandler {
         socketHandler.store().jid(companion);
         socketHandler.store().phoneNumber(PhoneNumber.of(companion.user()));
         socketHandler.markConnected();
+        var companionOs = container.findNode("platform")
+                .map(entry -> entry.attributes().getNullableString("name"))
+                .map(this::getCompanionOs)
+                .orElse(null);
+        socketHandler.store().companionOs(companionOs);
         socketHandler.store().business(isBusiness);
         socketHandler.store().addContact(Contact.ofJid(socketHandler.store().jid().toWhatsappJid()));
+    }
+
+    private UserAgentPlatform getCompanionOs(String name) {
+        return switch (name.toLowerCase()) {
+            case "smba" -> UserAgentPlatform.SMB_ANDROID;
+            case "smbi" -> UserAgentPlatform.SMB_IOS;
+            case "android" -> UserAgentPlatform.ANDROID;
+            case "ios" -> UserAgentPlatform.IOS;
+            default -> null;
+        };
     }
 
     protected void dispose() {
