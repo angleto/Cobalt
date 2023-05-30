@@ -5,16 +5,19 @@ import it.auties.protobuf.base.ProtobufDeserializationException;
 import it.auties.whatsapp.api.ClientType;
 import it.auties.whatsapp.api.WebHistoryLength;
 import it.auties.whatsapp.crypto.Handshake;
+import it.auties.whatsapp.model.mobile.PhoneNumber;
 import it.auties.whatsapp.model.request.Request;
 import it.auties.whatsapp.model.signal.auth.*;
 import it.auties.whatsapp.model.signal.auth.ClientPayload.ClientPayloadBuilder;
 import it.auties.whatsapp.model.signal.auth.Companion.CompanionPropsPlatformType;
 import it.auties.whatsapp.model.signal.auth.DNSSource.DNSSourceDNSResolutionMethod;
+import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentPlatform;
 import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.Protobuf;
 import it.auties.whatsapp.util.Spec;
 import lombok.RequiredArgsConstructor;
 
+import java.util.NoSuchElementException;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
@@ -103,7 +106,7 @@ class AuthHandler {
     private CompletableFuture<UserAgent> createUserAgent() {
         return socketHandler.store()
                 .version()
-                .thenApplyAsync(version -> createUserAgent(version, socketHandler.store().clientType() == ClientType.APP_CLIENT));
+                .thenApplyAsync(version -> createUserAgent(version, socketHandler.store().clientType() == ClientType.MOBILE));
     }
 
     private UserAgent createUserAgent(Version version, boolean mobile) {
@@ -113,16 +116,31 @@ class AuthHandler {
                 .device(mobile ? socketHandler.store().model() : null)
                 .manufacturer(mobile ? socketHandler.store().manufacturer() : null)
                 .phoneId(mobile ? socketHandler.keys().phoneId() : null)
-                .platform(socketHandler.store().osType())
+                .platform(getPlatform())
                 .releaseChannel(socketHandler.store().releaseChannel())
                 .mcc("000")
                 .mnc("000")
                 .build();
     }
 
+    private UserAgentPlatform getPlatform() {
+        if(!socketHandler.store().business()){
+            return socketHandler.store().os();
+        }
+
+        return switch (socketHandler.store().os()){
+            case ANDROID -> UserAgentPlatform.SMB_ANDROID;
+            case IOS -> UserAgentPlatform.SMB_IOS;
+            default -> throw new IllegalStateException("Unexpected platform: " + socketHandler.store().os());
+        };
+    }
+
     private CompletableFuture<ClientPayload> finishUserPayload(ClientPayloadBuilder builder) {
-        if(socketHandler.store().clientType() == ClientType.APP_CLIENT){
-            var phoneNumber = socketHandler.store().phoneNumber();
+        if(socketHandler.store().clientType() == ClientType.MOBILE){
+            var phoneNumber = socketHandler.store()
+                    .phoneNumber()
+                    .map(PhoneNumber::number)
+                    .orElseThrow(() -> new NoSuchElementException("Missing phone number for mobile registration"));
             var result = builder.sessionId(socketHandler.keys().registrationId())
                     .shortConnect(true)
                     .connectAttemptCount(0)
@@ -130,7 +148,7 @@ class AuthHandler {
                     .dnsSource(getDnsSource())
                     .passive(false)
                     .pushName(socketHandler.store().name())
-                    .username(Long.parseLong(phoneNumber.toJid().user()))
+                    .username(phoneNumber)
                     .build();
             return CompletableFuture.completedFuture(result);
         }
@@ -164,7 +182,7 @@ class AuthHandler {
                     .signatureId(socketHandler.keys().signedKeyPair().encodedId())
                     .signaturePublicKey(socketHandler.keys().signedKeyPair().keyPair().publicKey())
                     .signature(socketHandler.keys().signedKeyPair().signature());
-            if (socketHandler.store().clientType() == ClientType.WEB_CLIENT) {
+            if (socketHandler.store().clientType() == ClientType.WEB) {
                 var props = Protobuf.writeMessage(createCompanionProps());
                 companion.companion(props);
             }
@@ -174,7 +192,7 @@ class AuthHandler {
     }
 
     private Companion createCompanionProps() {
-        if (socketHandler.store().clientType() != ClientType.WEB_CLIENT) {
+        if (socketHandler.store().clientType() != ClientType.WEB) {
             return null;
         }
 

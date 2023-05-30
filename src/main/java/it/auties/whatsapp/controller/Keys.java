@@ -5,7 +5,8 @@ import com.fasterxml.jackson.annotation.JsonSetter;
 import it.auties.bytes.Bytes;
 import it.auties.whatsapp.api.ClientType;
 import it.auties.whatsapp.binary.PatchType;
-import it.auties.whatsapp.exception.UnknownSessionException;
+import it.auties.whatsapp.model.contact.ContactJid;
+import it.auties.whatsapp.model.mobile.PhoneNumber;
 import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentity;
 import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentityHMAC;
 import it.auties.whatsapp.model.signal.keypair.SignalKeyPair;
@@ -20,7 +21,6 @@ import it.auties.whatsapp.model.sync.LTHashState;
 import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.KeyHelper;
 import it.auties.whatsapp.util.Spec;
-import it.auties.whatsapp.util.Validate;
 import lombok.AccessLevel;
 import lombok.Builder.Default;
 import lombok.Getter;
@@ -136,12 +136,11 @@ public final class Keys extends Controller<Keys> {
      */
     @Getter
     @Default
-    private String identityId = KeyHelper.identityId();
+    private String recoveryToken = KeyHelper.identityId();
 
     /**
      * The bytes of the encoded {@link SignedDeviceIdentityHMAC} received during the auth process
      */
-    @Getter
     private SignedDeviceIdentity companionIdentity;
 
     /**
@@ -156,10 +155,10 @@ public final class Keys extends Controller<Keys> {
      */
     @NonNull
     @Default
-    private ArrayList<AppStateSyncKey> appStateKeys = new ArrayList<>();
+    private Map<ContactJid, LinkedList<AppStateSyncKey>> appStateKeys = new ConcurrentHashMap<>();
 
     /**
-     * Sessions toMap
+     * Sessions map
      */
     @NonNull
     @Default
@@ -171,7 +170,7 @@ public final class Keys extends Controller<Keys> {
      */
     @NonNull
     @Default
-    private Map<PatchType, LTHashState> hashStates = new ConcurrentHashMap<>();
+    private Map<ContactJid, Map<PatchType, LTHashState>> hashStates = new ConcurrentHashMap<>();
 
     /**
      * Whether the client was registered, if mobile app
@@ -207,67 +206,79 @@ public final class Keys extends Controller<Keys> {
     /**
      * Returns the keys saved in memory or constructs a new clean instance
      *
-     * @param uuid       the non-null uuid of the session
+     * @param uuid        the  uuid of the session, can be null
      * @param phoneNumber the phone number of the session to load, can be null
-     * @param clientType the non-null type of the client
-     * @param required   whether an exception should be thrown if the connection doesn't exist
+     * @param clientType  the non-null type of the client
      * @return a non-null store
      */
-    public static Keys of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, boolean required) {
+    public static Optional<Keys> of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType) {
+        return of(uuid, phoneNumber, clientType, false);
+    }
+
+    /**
+     * Returns the keys saved in memory or constructs a new clean instance
+     *
+     * @param uuid        the  uuid of the session, can be null
+     * @param phoneNumber the phone number of the session to load, can be null
+     * @param clientType  the non-null type of the client
+     * @param required    whether an exception should be thrown if the connection doesn't exist
+     * @return a non-null store
+     */
+    public static Optional<Keys> of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, boolean required) {
         return of(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance(), required);
     }
 
     /**
      * Returns the keys saved in memory or constructs a new clean instance
      *
-     * @param uuid       the non-null uuid of the session
+     * @param uuid        the non-null uuid of the session, can be null
      * @param phoneNumber the phone number of the session to load, can be null
-     * @param clientType the non-null type of the client
-     * @param serializer the non-null serializer
-     * @param required   whether an exception should be thrown if the connection doesn't exist
+     * @param clientType  the non-null type of the client
+     * @param serializer  the non-null serializer
+     * @param required    whether an exception should be thrown if the connection doesn't exist
      * @return a non-null store
      */
-    public static Keys of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer, boolean required) {
-        Validate.isTrue(uuid != null || phoneNumber != null || !required, UnknownSessionException.class);
+    public static Optional<Keys> of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer, boolean required) {
+        if (uuid == null && phoneNumber == null && required) {
+            return Optional.empty();
+        }
+
         var id = Objects.requireNonNullElseGet(uuid, UUID::randomUUID);
         var result = phoneNumber != null ? serializer.deserializeKeys(clientType, phoneNumber) : serializer.deserializeKeys(clientType, id);
-        if(required && result.isEmpty()){
-            if(phoneNumber != null) {
-                throw new UnknownSessionException(phoneNumber);
-            }
-
-            throw new UnknownSessionException(id);
+        if (required && result.isEmpty()) {
+            return Optional.empty();
         }
 
         return result.map(keys -> keys.serializer(serializer))
-                .orElseGet(() -> random(id, clientType, serializer));
+                .or(() -> Optional.of(random(id, phoneNumber, clientType, serializer)));
     }
 
     /**
      * Returns a new instance of random keys
      *
-     * @param uuid the uuid of the session to create, can be null
+     * @param uuid       the uuid of the session to create, can be null
      * @param clientType the non-null type of the client
      * @return a non-null instance
      */
-    public static Keys random(UUID uuid, @NonNull ClientType clientType) {
-        return random(uuid, clientType, DefaultControllerSerializer.instance());
+    public static Keys random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType) {
+        return random(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance());
     }
 
     /**
      * Returns a new instance of random keys
      *
-     * @param uuid the uuid of the session to create, can be null
+     * @param uuid       the uuid of the session to create, can be null
      * @param clientType the non-null type of the client
      * @param serializer the non-null serializer
      * @return a non-null instance
      */
-    public static Keys random(UUID uuid, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+    public static Keys random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
         var result = Keys.builder()
+                .phoneNumber(PhoneNumber.ofNullable(phoneNumber).orElse(null))
                 .serializer(serializer)
                 .uuid(Objects.requireNonNullElseGet(uuid, UUID::randomUUID))
                 .clientType(clientType)
-                .prologue(clientType == ClientType.WEB_CLIENT ? Spec.Whatsapp.WEB_PROLOGUE : Spec.Whatsapp.APP_PROLOGUE)
+                .prologue(clientType == ClientType.WEB ? Spec.Whatsapp.WEB_PROLOGUE : Spec.Whatsapp.APP_PROLOGUE)
                 .build();
         result.signedKeyPair(SignalSignedKeyPair.of(result.registrationId(), result.identityKeyPair()));
         result.serialize(true);
@@ -349,11 +360,13 @@ public final class Keys extends Controller<Keys> {
     /**
      * Queries the app state key that matches {@code id}
      *
-     * @param id the non-null id to search
+     * @param jid the non-null jid of the app key
+     * @param id  the non-null id to search
      * @return a non-null Optional app state dataSync key
      */
-    public Optional<AppStateSyncKey> findAppKeyById(byte[] id) {
-        return appStateKeys.stream()
+    public Optional<AppStateSyncKey> findAppKeyById(@NonNull ContactJid jid, byte[] id) {
+        return Objects.requireNonNull(appStateKeys.get(jid), "Missing keys")
+                .stream()
                 .filter(preKey -> preKey.keyId() != null && Arrays.equals(preKey.keyId().keyId(), id))
                 .findFirst();
     }
@@ -361,11 +374,12 @@ public final class Keys extends Controller<Keys> {
     /**
      * Queries the hash state that matches {@code name}. Otherwise, creates a new one.
      *
+     * @param device    the non-null device
      * @param patchType the non-null name to search
      * @return a non-null hash state
      */
-    public Optional<LTHashState> findHashStateByName(@NonNull PatchType patchType) {
-        return Optional.ofNullable(hashStates.get(patchType));
+    public Optional<LTHashState> findHashStateByName(@NonNull ContactJid device, @NonNull PatchType patchType) {
+        return Optional.ofNullable(hashStates.get(device)).map(entry -> entry.get(patchType));
     }
 
     /**
@@ -404,23 +418,26 @@ public final class Keys extends Controller<Keys> {
     /**
      * Adds the provided hash state to the known ones
      *
-     * @param patchType the non-null sync name
-     * @param state     the non-null hash state
+     * @param device the non-null device
+     * @param state  the non-null hash state
      * @return this
      */
-    public Keys putState(@NonNull PatchType patchType, @NonNull LTHashState state) {
-        hashStates.put(patchType, state);
+    public Keys putState(@NonNull ContactJid device, @NonNull LTHashState state) {
+        var oldData = Objects.requireNonNullElseGet(hashStates.get(device), HashMap<PatchType, LTHashState>::new);
+        oldData.put(state.name(), state);
+        hashStates.put(device, oldData);
         return this;
     }
 
     /**
      * Adds the provided keys to the app state keys
      *
+     * @param jid  the non-null jid of the app key
      * @param keys the keys to add
      * @return this
      */
-    public Keys addAppKeys(@NonNull Collection<AppStateSyncKey> keys) {
-        appStateKeys.addAll(keys);
+    public Keys addAppKeys(@NonNull ContactJid jid, @NonNull Collection<AppStateSyncKey> keys) {
+        appStateKeys.put(jid, new LinkedList<>(keys));
         return this;
     }
 
@@ -469,21 +486,9 @@ public final class Keys extends Controller<Keys> {
      *
      * @return a non-null app key
      */
-    public AppStateSyncKey appKey() {
-        if(appStateKeys.isEmpty()){
-            throw new NoSuchElementException("No keys available");
-        }
-
-        return appStateKeys.get(appStateKeys.size() - 1);
-    }
-
-    /**
-     * Returns whether any app key is available
-     *
-     * @return a boolean
-     */
-    public boolean hasAppKeys() {
-        return !appStateKeys.isEmpty();
+    public AppStateSyncKey getLatestAppKey(@NonNull ContactJid jid) {
+        var keys = Objects.requireNonNull(appStateKeys.get(jid), "Missing keys");
+        return keys.getLast();
     }
 
     @JsonSetter
@@ -501,6 +506,16 @@ public final class Keys extends Controller<Keys> {
     public Keys companionIdentity(SignedDeviceIdentity companionIdentity) {
         this.companionIdentity = companionIdentity;
         return this;
+    }
+
+    /**
+     * Returns the companion identity of this session
+     * Only available for web sessions
+     *
+     * @return an optional
+     */
+    public Optional<SignedDeviceIdentity> companionIdentity() {
+        return Optional.ofNullable(companionIdentity);
     }
 
     @Override

@@ -311,15 +311,15 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
     private ContactJid lidJid;
 
     /**
-     * A toMap that holds the status of each participant, excluding yourself, for this chat. If the
-     * chat is not a group, this toMap's size will range from 0 to 1. Otherwise, it will range from 0
+     * A map that holds the status of each participant, excluding yourself, for this chat. If the
+     * chat is not a group, this map's size will range from 0 to 1. Otherwise, it will range from 0
      * to the number of participants - 1. It is important to remember that is not guaranteed that
      * every participant will be present as a key. In this case, if this chat is a group, it can be
      * safely assumed that the user is not available. Otherwise, it's recommended to use
      * {@link Whatsapp#subscribeToPresence(ContactJidProvider)} to force Whatsapp to send updates
      * regarding the status of the other participant. It's also possible to listen for updates to a
      * contact's presence in a group or in a conversation by implementing
-     * {@link Listener#onContactPresence}. The presence that this toMap indicates might not line up
+     * {@link Listener#onContactPresence}. The presence that this map indicates might not line up
      * with {@link Contact#lastKnownPresence()} if the contact is composing, recording or paused. This
      * is because a contact can be online on Whatsapp and composing, recording or paused in a specific
      * chat.
@@ -424,7 +424,7 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
         var iterator = historySyncMessages.iterator();
         return historySyncMessages.stream()
                 .limit(unreadMessagesCount())
-                .map(HistorySyncMessage::message)
+                .map(HistorySyncMessage::messageInfo)
                 .toList();
     }
 
@@ -509,7 +509,7 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
      */
     public Optional<MessageInfo> newestMessage() {
         return Optional.ofNullable(historySyncMessages.peekLast())
-                .map(HistorySyncMessage::message);
+                .map(HistorySyncMessage::messageInfo);
     }
 
     /**
@@ -519,7 +519,7 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
      */
     public Optional<MessageInfo> oldestMessage() {
         return Optional.ofNullable(historySyncMessages.peekFirst())
-                .map(HistorySyncMessage::message);
+                .map(HistorySyncMessage::messageInfo);
     }
 
     /**
@@ -597,7 +597,7 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
     private Optional<MessageInfo> findMessageBy(Function<MessageInfo, Boolean> filter, boolean newest) {
         var descendingIterator = newest ? historySyncMessages.descendingIterator() : historySyncMessages.iterator();
         while (descendingIterator.hasNext()){
-            var info = descendingIterator.next().message();
+            var info = descendingIterator.next().messageInfo();
             if(filter.apply(info)){
                 return Optional.ofNullable(info);
             }
@@ -614,7 +614,7 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
      */
     public Collection<MessageInfo> starredMessages() {
         return historySyncMessages.stream()
-                .map(HistorySyncMessage::message)
+                .map(HistorySyncMessage::messageInfo)
                 .filter(MessageInfo::starred)
                 .toList();
     }
@@ -758,7 +758,7 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
      * @return whether the message was removed
      */
     public boolean removeMessage(@NonNull MessageInfo info) {
-        var result = historySyncMessages.removeIf(entry -> Objects.equals(entry.message().id(), info.id()));
+        var result = historySyncMessages.removeIf(entry -> Objects.equals(entry.messageInfo().id(), info.id()));
         refreshChatTimestamp();
         return result;
     }
@@ -770,7 +770,7 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
      * @return whether the message was removed
      */
     public boolean removeMessage(@NonNull Predicate<? super MessageInfo> predicate) {
-        var result = historySyncMessages.removeIf(entry -> predicate.test(entry.message()));
+        var result = historySyncMessages.removeIf(entry -> predicate.test(entry.messageInfo()));
         refreshChatTimestamp();
         return result;
     }
@@ -816,6 +816,15 @@ public final class Chat implements ProtobufMessage, ContactJidProvider {
      */
     public Collection<GroupParticipant> participants() {
         return participants.values();
+    }
+
+    /**
+     * Adds a collection of participants to this chat
+     *
+     * @param participants the participants to add
+     */
+    public void addParticipants(Collection<GroupParticipant> participants) {
+        participants.forEach(this::addParticipant);
     }
 
     /**

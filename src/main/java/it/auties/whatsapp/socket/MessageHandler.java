@@ -2,7 +2,6 @@ package it.auties.whatsapp.socket;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
-import it.auties.whatsapp.util.Protobuf;
 import it.auties.whatsapp.api.ClientType;
 import it.auties.whatsapp.api.WebHistoryLength;
 import it.auties.whatsapp.crypto.*;
@@ -47,18 +46,19 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 import static it.auties.whatsapp.api.ErrorHandler.Location.MESSAGE;
 import static it.auties.whatsapp.api.ErrorHandler.Location.UNKNOWN;
-import static it.auties.whatsapp.model.sync.HistorySync.Type.FULL;
 import static it.auties.whatsapp.model.sync.HistorySync.Type.RECENT;
 import static it.auties.whatsapp.util.Spec.Signal.*;
 
 class MessageHandler {
     private static final int MAX_ATTEMPTS = 3;
     private static final int WEEKS_GROUP_METADATA_SYNC = 2;
+    private static final int HISTORY_SYNC_TIMEOUT = 10;
 
     private final SocketHandler socketHandler;
     private final OrderedAsyncTaskRunner runner;
@@ -70,6 +70,7 @@ class MessageHandler {
     private final Logger logger;
     private final DeferredTaskRunner deferredTaskRunner;
     private final Set<ContactJid> attributedGroups;
+    private CompletableFuture<?> historySyncTask;
 
     protected MessageHandler(SocketHandler socketHandler) {
         this.socketHandler = socketHandler;
@@ -108,7 +109,7 @@ class MessageHandler {
             return;
         }
 
-        saveMessage(request.info(), "unknown", false);
+        saveMessage(request.info(), false);
         attributeMessageReceipt(request.info());
     }
 
@@ -158,7 +159,7 @@ class MessageHandler {
             return socketHandler.send(encodedMessageNode);
         }
 
-        var deviceMessage = DeviceSentMessage.of(request.info().chatJid().toString(), request.info().message(), null);
+        var deviceMessage = new DeviceSentMessage(request.info().chatJid().toString(), request.info().message(), null);
         var encodedDeviceMessage = BytesHelper.messageToBytes(deviceMessage);
         return getDevices(knownDevices, true, request.force())
                 .thenComposeAsync(allDevices -> createConversationNodes(request, allDevices, encodedMessage, encodedDeviceMessage))
@@ -197,47 +198,8 @@ class MessageHandler {
         }
 
         if (!request.peer() && hasPreKeyMessage(preKeys)) {
-            var identity = Protobuf.writeMessage(socketHandler.keys().companionIdentity());
-            body.add(Node.of("device-identity", identity));
-        }
-
-        if(request.info().message().content() instanceof ButtonMessage buttonMessage) {
-            if(buttonMessage instanceof TemplateMessage templateMessage){
-                // var features =  templateMessage.content()
-                //                        .hydratedButtons()
-                //                        .stream()
-                //                        .map(HydratedTemplateButton::button)
-                //                        .flatMap(Optional::stream)
-                //                        .map(entry -> Node.ofAttributes(
-                //                                "feature",
-                //                                Map.of(
-                //                                        "name", entry.buttonType().name().toLowerCase(Locale.ROOT) + "_button"
-                //                                )
-                //                        ))
-                //                        .toList();
-                body.add(Node.ofChildren(
-                        "hsm",
-                        Map.of(
-                                "category", "NON_TRANSACTIONAL",
-                                "tag", templateMessage.id(),
-                                "buttons", 1,
-                                "v", 1
-                        ),
-                        Node.ofChildren(
-                                "capabilities" //,
-                                // features
-                        )
-                ));
-            }else {
-                var type = getButtonType(request.info().message());
-                if (type != null) {
-                    var args = getButtonArgs(buttonMessage);
-                    body.add(Node.ofChildren(
-                            "biz",
-                            Node.ofAttributes(type, args)
-                    ));
-                }
-            }
+            socketHandler.keys().companionIdentity()
+                    .ifPresent(companionIdentity -> body.add(Node.of("device-identity", Protobuf.writeMessage(companionIdentity))));
         }
 
         var attributes = Attributes.ofNullable(request.additionalAttributes())
@@ -400,8 +362,9 @@ class MessageHandler {
 
     protected void parseSessions(Node node) {
         node.findNode("list")
-                .orElseThrow(() -> new NoSuchElementException("Missing list: %s".formatted(node)))
-                .findNodes("user")
+                .map(entry -> entry.findNodes("user"))
+                .stream()
+                .flatMap(Collection::stream)
                 .forEach(this::parseSession);
     }
 
@@ -464,24 +427,6 @@ class MessageHandler {
                 .put("mediatype", mediaType, Objects::nonNull)
                 .toMap();
         return Node.of("enc", attributes, groupMessage.message());
-    }
-
-    private String getButtonType(MessageContainer container){
-        return switch (container.type()){
-            case BUTTONS -> "buttons";
-            case INTERACTIVE_RESPONSE -> "interactive_response";
-            case LIST -> "list";
-            case LIST_RESPONSE -> "list_response";
-            default -> null;
-        };
-    }
-
-    private Map<String, Object> getButtonArgs(ButtonMessage buttonMessage) {
-        if (Objects.requireNonNull(buttonMessage) instanceof ListMessage listMessage) {
-            return Map.of("v", 2, "type", listMessage.listType().name().toLowerCase());
-        }else {
-            return Map.of();
-        }
     }
 
     private String getMediaType(MessageContainer container) {
@@ -588,17 +533,42 @@ class MessageHandler {
                     .build();
             attributeMessageReceipt(info);
             socketHandler.store().attribute(info);
-            var category = infoNode.attributes().getString("category");
-            saveMessage(info, category, offline);
-            socketHandler.sendReceipt(info.chatJid(), info.senderJid(), List.of(info.key().id()), null);
+            saveMessage(info, offline);
+            sendReceipt(infoNode, info);
             socketHandler.onReply(info);
         } catch (Throwable throwable) {
             socketHandler.handleFailure(MESSAGE, throwable);
         }
     }
 
+    private void sendReceipt(Node infoNode, MessageInfo info) {
+        var chatJid = info.chatJid();
+        var senderJid = info.key()
+                .senderJid()
+                .orElseGet(() -> info.fromMe() ? chatJid : null);
+        var category = infoNode.attributes().getString("category");
+        var receiptType = getReceiptType(category, info);
+        socketHandler.sendReceipt(chatJid, senderJid, List.of(info.key().id()), receiptType);
+    }
+
+    private String getReceiptType(String category, MessageInfo info) {
+        if(Objects.equals(category, "peer")){
+            return "peer_msg";
+        }
+
+        if(info.fromMe()){
+            return "sender";
+        }
+
+        if(!socketHandler.store().online()){
+            return "inactive";
+        }
+
+        return null;
+    }
+
     private boolean isSelfMessage(MessageKey key) {
-        return socketHandler.store().clientType() == ClientType.APP_CLIENT
+        return socketHandler.store().clientType() == ClientType.MOBILE
                 && key.fromMe()
                 && key.senderJid().isPresent()
                 && !key.senderJid().get().hasAgent();
@@ -609,7 +579,7 @@ class MessageHandler {
             logger.log(Level.WARNING, "Cannot decode message(id: %s, from: %s): %s".formatted(id, from, decodedMessage == null ? "unknown error" : decodedMessage.error().getMessage()));
         }
 
-        if(socketHandler.store().clientType() == ClientType.APP_CLIENT){
+        if(socketHandler.store().clientType() == ClientType.MOBILE){
             return false;
         }
 
@@ -681,7 +651,7 @@ class MessageHandler {
         info.status(MessageStatus.READ);
     }
 
-    private void saveMessage(MessageInfo info, String category, boolean offline) {
+    private void saveMessage(MessageInfo info, boolean offline) {
         if(info.message().content() instanceof SenderKeyDistributionMessage distributionMessage) {
             handleDistributionMessage(distributionMessage, info.senderJid());
         }
@@ -692,7 +662,7 @@ class MessageHandler {
         }
         if (info.message().hasCategory(MessageCategory.SERVER)) {
             if (info.message().content() instanceof ProtocolMessage protocolMessage) {
-                onProtocolMessage(info, protocolMessage, Objects.equals(category, "peer"));
+                handleProtocolMessage(info, protocolMessage);
             }
             return;
         }
@@ -721,7 +691,10 @@ class MessageHandler {
 
     private Node createPreKeyNode() {
         var preKey = SignalPreKeyPair.random(socketHandler.keys().lastPreKeyId() + 1);
-        var identity = Protobuf.writeMessage(socketHandler.keys().companionIdentity());
+        var identity = socketHandler.keys()
+                .companionIdentity()
+                .map(Protobuf::writeMessage)
+                .orElseThrow(() -> new NoSuchElementException("Missing companion identity"));
         return Node.ofChildren("keys",
                 Node.of("type", Spec.Signal.KEY_BUNDLE_TYPE),
                 Node.of("identity", socketHandler.keys().identityKeyPair().publicKey()),
@@ -730,15 +703,8 @@ class MessageHandler {
                 Node.of("device-identity", identity));
     }
 
-    private void onProtocolMessage(MessageInfo info, ProtocolMessage protocolMessage, boolean peer) {
-        handleProtocolMessage(info, protocolMessage);
-        if (!peer) {
-            return;
-        }
-        socketHandler.sendSyncReceipt(info, "peer_msg");
-    }
-
     private void handleProtocolMessage(MessageInfo info, ProtocolMessage protocolMessage) {
+        System.out.println("Received protocol: " + protocolMessage);
         switch (protocolMessage.protocolType()) {
             case HISTORY_SYNC_NOTIFICATION -> onHistorySyncNotification(info, protocolMessage);
             case APP_STATE_SYNC_KEY_SHARE -> onAppStateSyncKeyShare(protocolMessage);
@@ -762,7 +728,7 @@ class MessageHandler {
     }
 
     private void onAppStateSyncKeyShare(ProtocolMessage protocolMessage) {
-        socketHandler.keys().addAppKeys(protocolMessage.appStateSyncKeyShare().keys());
+        socketHandler.keys().addAppKeys(socketHandler.store().jid(), protocolMessage.appStateSyncKeyShare().keys());
         if (socketHandler.store().initialSync()) {
             return;
         }
@@ -791,19 +757,18 @@ class MessageHandler {
     private void onHistoryNotification(MessageInfo info, HistorySync history) {
         handleHistorySync(history);
         if (history.progress() != null) {
-            if(isSyncComplete(history)) {
-                handleChatsSync(history, true);
-            }
-
+            scheduleTimeoutSync(history);
             socketHandler.onHistorySyncProgress(history.progress(), history.syncType() == RECENT);
         }
-
-        socketHandler.sendSyncReceipt(info, "hist_sync");
+        socketHandler.sendReceipt(info.chatJid(), null, List.of(info.id()), "hist_sync");
     }
 
-    private boolean isSyncComplete(HistorySync history) {
-        return history.progress() == 100
-                && socketHandler.store().historyLength() == WebHistoryLength.STANDARD ? history.syncType() == RECENT : history.syncType() == FULL;
+    private void scheduleTimeoutSync(HistorySync history) {
+        var executor = CompletableFuture.delayedExecutor(HISTORY_SYNC_TIMEOUT, TimeUnit.SECONDS);
+        if(historySyncTask != null){
+            historySyncTask.cancel(true);
+        }
+        this.historySyncTask = CompletableFuture.runAsync(() -> handleChatsSync(history, true), executor);
     }
 
     private void onMessageDeleted(MessageInfo info, MessageInfo message) {
@@ -846,7 +811,7 @@ class MessageHandler {
                 .findContactByJid(jid)
                 .orElseGet(() -> createNewContact(jid));
         contact.chosenName(pushName.name());
-        var action = ContactAction.of(pushName.name(), null, null);
+        var action = new ContactAction(pushName.name(), null, null);
         socketHandler.onAction(action, MessageIndexInfo.of("contact", jid, null, true));
     }
 
@@ -921,7 +886,10 @@ class MessageHandler {
 
     @SafeVarargs
     private <T> List<T> toSingleList(List<T>... all) {
-        return Stream.of(all).filter(Objects::nonNull).flatMap(Collection::stream).toList();
+        return Stream.of(all)
+                .filter(Objects::nonNull)
+                .flatMap(Collection::stream)
+                .toList();
     }
 
     protected void dispose() {
@@ -930,6 +898,7 @@ class MessageHandler {
         devicesCache.invalidateAll();
         historyCache.clear();
         runner.cancel();
+        historySyncTask = null;
     }
 
     private record MessageDecodeResult(byte[] message, Throwable error) {
