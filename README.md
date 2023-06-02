@@ -51,7 +51,7 @@ In short, if you use this library without a malicious intent, you will never get
 <dependency>
     <groupId>com.github.auties00</groupId>
     <artifactId>whatsappweb4j</artifactId>
-    <version>3.4.1</version>
+    <version>3.4.4</version>
 </dependency>
 ```
 
@@ -59,12 +59,12 @@ In short, if you use this library without a malicious intent, you will never get
 
 1. Groovy DSL
    ```groovy
-   implementation 'com.github.auties00:whatsappweb4j:3.4.1'
+   implementation 'com.github.auties00:whatsappweb4j:3.4.4'
    ```
 
 2. Kotlin DSL
    ```kotlin
-   implementation("com.github.auties00:whatsappweb4j:3.4.1")
+   implementation("com.github.auties00:whatsappweb4j:3.4.4")
    ```
 
 ### Examples
@@ -787,14 +787,14 @@ All types of messages supported by Whatsapp are supported by this library:
 
     ```java
     var someMessage = ...; // The message to react to
-    api.sendReaction(someMessage, Emojy.RED_HEART); // Use the Emojy class for a list of all Emojys
+    api.sendReaction(someMessage, Emoji.RED_HEART); // Use the Emoji class for a list of all Emojis
     ```
 
     - Remove a reaction
 
     ```java
     var someMessage = ...; // The message to react to
-    api.removeReaction(someMessage); // Use the Emojy class for a list of all Emojys
+    api.removeReaction(someMessage); // Use the Emoji class for a list of all Emojis
     ```
 
 ### How to wait for replies

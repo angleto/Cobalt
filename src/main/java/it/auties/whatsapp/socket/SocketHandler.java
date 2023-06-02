@@ -11,6 +11,7 @@ import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.crypto.AesGmc;
 import it.auties.whatsapp.listener.Listener;
 import it.auties.whatsapp.model.action.Action;
+import it.auties.whatsapp.model.business.BusinessCategory;
 import it.auties.whatsapp.model.chat.Chat;
 import it.auties.whatsapp.model.chat.GroupMetadata;
 import it.auties.whatsapp.model.contact.Contact;
@@ -64,6 +65,7 @@ public class SocketHandler implements SocketListener {
     private SocketSession session;
 
     @NonNull
+    @Getter
     private final Whatsapp whatsapp;
 
     @NonNull
@@ -217,16 +219,16 @@ public class SocketHandler implements SocketListener {
     }
 
     public synchronized CompletableFuture<Void> connect() {
+        if(state == SocketState.CONNECTED){
+            return CompletableFuture.completedFuture(null);
+        }
+
         if (loginFuture == null || loginFuture.isDone()) {
             this.loginFuture = new CompletableFuture<>();
         }
 
         if (logoutFuture == null || logoutFuture.isDone()) {
             this.logoutFuture = new CompletableFuture<>();
-        }
-
-        if(state == SocketState.CONNECTED){
-            return loginFuture;
         }
 
         this.session = new SocketSession(store.proxy().orElse(null), store.socketExecutor());
@@ -291,12 +293,12 @@ public class SocketHandler implements SocketListener {
         };
     }
 
-    public CompletableFuture<Void> pushPatch(PatchType type, PatchRequest request) {
-        return appStateHandler.push(type, store.jid(), List.of(request));
+    public CompletableFuture<Void> pushPatch(PatchRequest request) {
+        return appStateHandler.push(store.jid(), List.of(request));
     }
 
-    public CompletableFuture<Void> pushPatches(PatchType type, ContactJid jid, List<PatchRequest> requests) {
-        return appStateHandler.push(type, jid, requests);
+    public CompletableFuture<Void> pushPatches(ContactJid jid, List<PatchRequest> requests) {
+        return appStateHandler.push(jid, requests);
     }
 
     public void pullPatch(PatchType... patchTypes) {
@@ -312,6 +314,10 @@ public class SocketHandler implements SocketListener {
     }
 
     public CompletableFuture<Void> sendPeerMessage(ContactJid companion, ProtocolMessage message) {
+        if(message == null){
+            return CompletableFuture.completedFuture(null);
+        }
+
         var key = MessageKey.builder()
                 .chatJid(companion)
                 .fromMe(true)
@@ -545,6 +551,13 @@ public class SocketHandler implements SocketListener {
         sendWithNoResponse(Node.ofAttributes("ack", attributes));
     }
 
+    protected void onRegistrationCode(long code) {
+        callListenersAsync(listener -> {
+            listener.onRegistrationCode(whatsapp, code);
+            listener.onRegistrationCode(code);
+        });
+    }
+
     protected void onMetadata(Map<String, String> properties) {
         callListenersAsync(listener -> {
             listener.onMetadata(whatsapp, properties);
@@ -563,17 +576,21 @@ public class SocketHandler implements SocketListener {
         });
     }
 
-    protected void onUpdateChatPresence(ContactStatus status, Contact contact, Chat chat) {
-        contact.lastKnownPresence(status);
-        if (status == contact.lastKnownPresence()) {
-            return;
+    protected void onUpdateChatPresence(ContactStatus status, ContactJid contactJid, Chat chat) {
+        var contact = store.findContactByJid(contactJid);
+        if(contact.isPresent()) {
+            contact.get().lastKnownPresence(status);
+            if (status == contact.get().lastKnownPresence()) {
+                return;
+            }
+
+            contact.get().lastSeen(ZonedDateTime.now());
         }
 
-        chat.presences().put(contact.jid(), status);
-        contact.lastSeen(ZonedDateTime.now());
+        chat.presences().put(contactJid, status);
         callListenersAsync(listener -> {
-            listener.onContactPresence(whatsapp, chat, contact, status);
-            listener.onContactPresence(chat, contact, status);
+            listener.onContactPresence(whatsapp, chat, contactJid, status);
+            listener.onContactPresence(chat, contactJid, status);
         });
     }
 
@@ -852,5 +869,20 @@ public class SocketHandler implements SocketListener {
 
     public void parseSessions(Node result) {
         messageHandler.parseSessions(result);
+    }
+
+    public CompletableFuture<List<BusinessCategory>> queryBusinessCategories() {
+            return sendQuery("get", "fb:thrift_iq", Node.ofChildren("request", Map.of("op", "profile_typeahead", "type", "catkit", "v", "1"), Node.ofChildren("query", List.of())))
+                    .thenApplyAsync(this::parseBusinessCategories);
+    }
+
+    private List<BusinessCategory> parseBusinessCategories(Node result) {
+        return result.findNode("response")
+                .flatMap(entry -> entry.findNode("categories"))
+                .stream()
+                .map(entry -> entry.findNodes("category"))
+                .flatMap(Collection::stream)
+                .map(BusinessCategory::of)
+                .toList();
     }
 }

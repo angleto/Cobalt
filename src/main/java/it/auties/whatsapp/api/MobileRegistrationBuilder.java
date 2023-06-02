@@ -3,6 +3,7 @@ package it.auties.whatsapp.api;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.model.mobile.PhoneNumber;
+import it.auties.whatsapp.model.mobile.RegistrationStatus;
 import it.auties.whatsapp.model.mobile.VerificationCodeMethod;
 import it.auties.whatsapp.util.RegistrationHelper;
 import lombok.AllArgsConstructor;
@@ -70,8 +71,11 @@ public sealed class MobileRegistrationBuilder {
          * @return a future
          */
         public CompletableFuture<Whatsapp> register(long phoneNumber, @NonNull VerificationCodeMethod method, @NonNull AsyncVerificationCodeSupplier handler) {
-            return keys.registered() ? CompletableFuture.completedFuture(new Whatsapp(store, keys)) : RegistrationHelper.registerPhoneNumber(store.phoneNumber(PhoneNumber.of(phoneNumber)), keys, handler, method)
-                    .thenApply(ignored -> new Whatsapp(store, keys));
+            var number = PhoneNumber.of(phoneNumber);
+            keys.phoneNumber(number);
+            store.phoneNumber(number);
+            return keys.registrationStatus() == RegistrationStatus.UNREGISTERED ? RegistrationHelper.registerPhoneNumber(store, keys, handler, method)
+                    .thenApply(ignored -> Whatsapp.of(store, keys)) : CompletableFuture.completedFuture(Whatsapp.of(store, keys));
         }
 
         /**
@@ -92,8 +96,11 @@ public sealed class MobileRegistrationBuilder {
          * @return a future
          */
         public CompletableFuture<Unverified> requestVerificationCode(long phoneNumber, @NonNull VerificationCodeMethod method) {
-            return keys.registered() ? CompletableFuture.completedFuture(new Unverified(store, keys)) : RegistrationHelper.requestVerificationCode(store.phoneNumber(PhoneNumber.of(phoneNumber)), keys, method)
-                    .thenApply(ignored -> new Unverified(store, keys));
+            var number = PhoneNumber.of(phoneNumber);
+            keys.phoneNumber(number);
+            store.phoneNumber(number);
+            return keys.registrationStatus() == RegistrationStatus.UNREGISTERED ? RegistrationHelper.requestVerificationCode(store, keys, method)
+                    .thenApply(ignored -> new Unverified(store, keys)) : CompletableFuture.completedFuture(new Unverified(store, keys));
         }
     }
 
@@ -108,7 +115,9 @@ public sealed class MobileRegistrationBuilder {
          * @return the same instance for chaining
          */
         public CompletableFuture<Whatsapp> verify(long phoneNumber, Supplier<String> handler) {
-            store.phoneNumber(PhoneNumber.of(phoneNumber));
+            var number = PhoneNumber.of(phoneNumber);
+            keys.phoneNumber(number);
+            store.phoneNumber(number);
             return verify(handler);
         }
 
@@ -140,7 +149,7 @@ public sealed class MobileRegistrationBuilder {
         public CompletableFuture<Whatsapp> verify(AsyncVerificationCodeSupplier handler) {
             Objects.requireNonNull(store.phoneNumber(), "Missing phone number: please specify it");
             return RegistrationHelper.sendVerificationCode(store, keys, handler)
-                    .thenApply(ignored -> new Whatsapp(store, keys));
+                    .thenApply(ignored -> Whatsapp.of(store, keys));
         }
     }
 }

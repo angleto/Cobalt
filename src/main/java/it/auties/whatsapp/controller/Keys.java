@@ -7,6 +7,7 @@ import it.auties.whatsapp.api.ClientType;
 import it.auties.whatsapp.binary.PatchType;
 import it.auties.whatsapp.model.contact.ContactJid;
 import it.auties.whatsapp.model.mobile.PhoneNumber;
+import it.auties.whatsapp.model.mobile.RegistrationStatus;
 import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentity;
 import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentityHMAC;
 import it.auties.whatsapp.model.signal.keypair.SignalKeyPair;
@@ -177,7 +178,8 @@ public final class Keys extends Controller<Keys> {
      */
     @Getter
     @Setter
-    private boolean registered;
+    @Default
+    private RegistrationStatus registrationStatus = RegistrationStatus.UNREGISTERED;
 
     /**
      * Write counter for IV
@@ -202,6 +204,22 @@ public final class Keys extends Controller<Keys> {
     @Getter
     @Setter
     private Bytes writeKey, readKey;
+
+    public static Keys of(UUID uuid, long phoneNumber, byte[] publicKey, byte[] privateKey, byte[] messagePublicKey, byte[] messagePrivateKey, byte[] registrationId) {
+        var result = Keys.builder()
+                .serializer(DefaultControllerSerializer.instance())
+                .phoneNumber(PhoneNumber.ofNullable(phoneNumber).orElse(null))
+                .noiseKeyPair(new SignalKeyPair(publicKey, privateKey))
+                .identityKeyPair(new SignalKeyPair(messagePublicKey, messagePrivateKey))
+                .uuid(Objects.requireNonNullElseGet(uuid, UUID::randomUUID))
+                .clientType(ClientType.MOBILE)
+                .prologue(Spec.Whatsapp.APP_PROLOGUE)
+                .registrationStatus(RegistrationStatus.REGISTERED)
+                .build();
+        result.signedKeyPair(SignalSignedKeyPair.of(result.registrationId(), result.identityKeyPair()));
+        result.serialize(true);
+        return result;
+    }
 
     /**
      * Returns the keys saved in memory or constructs a new clean instance
@@ -442,6 +460,25 @@ public final class Keys extends Controller<Keys> {
     }
 
     /**
+     * Get any available app key
+     *
+     * @return a non-null app key
+     */
+    public AppStateSyncKey getLatestAppKey(@NonNull ContactJid jid) {
+        var keys = Objects.requireNonNull(appStateKeys.get(jid), "Missing keys");
+        return keys.getLast();
+    }
+
+    /**
+     * Get any available app key
+     *
+     * @return a non-null app key
+     */
+    public LinkedList<AppStateSyncKey> getAppKeys(@NonNull ContactJid jid) {
+        return Objects.requireNonNullElseGet(appStateKeys.get(jid), LinkedList::new);
+    }
+
+    /**
      * Adds the provided pre key to the pre keys
      *
      * @param preKey the key to add
@@ -481,16 +518,6 @@ public final class Keys extends Controller<Keys> {
         return preKeys.isEmpty() ? 0 : preKeys.get(preKeys.size() - 1).id();
     }
 
-    /**
-     * Get any available app key
-     *
-     * @return a non-null app key
-     */
-    public AppStateSyncKey getLatestAppKey(@NonNull ContactJid jid) {
-        var keys = Objects.requireNonNull(appStateKeys.get(jid), "Missing keys");
-        return keys.getLast();
-    }
-
     @JsonSetter
     private void defaultSignedKey() {
         this.signedKeyPair = SignalSignedKeyPair.of(registrationId, identityKeyPair);
@@ -516,6 +543,15 @@ public final class Keys extends Controller<Keys> {
      */
     public Optional<SignedDeviceIdentity> companionIdentity() {
         return Optional.ofNullable(companionIdentity);
+    }
+
+    /**
+     * Returns all the registered pre keys
+     *
+     * @return a non-null collection
+     */
+    public Collection<SignalPreKeyPair> preKeys(){
+        return Collections.unmodifiableList(preKeys);
     }
 
     @Override

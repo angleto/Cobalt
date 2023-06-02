@@ -200,22 +200,22 @@ public interface Listener {
     /**
      * Called when the socket receives an update regarding the presence of a contact
      *
-     * @param whatsapp an instance to the calling api
-     * @param chat     the chat that this update regards
-     * @param contact  the contact that this update regards
-     * @param status   the new status of the contact
+     * @param whatsapp   an instance to the calling api
+     * @param chat       the chat that this update regards
+     * @param contactJid the contact that this update regards
+     * @param status     the new status of the contact
      */
-    default void onContactPresence(Whatsapp whatsapp, Chat chat, Contact contact, ContactStatus status) {
+    default void onContactPresence(Whatsapp whatsapp, Chat chat, ContactJid contactJid, ContactStatus status) {
     }
 
     /**
      * Called when the socket receives an update regarding the presence of a contact
      *
-     * @param chat    the chat that this update regards
-     * @param contact the contact that this update regards
-     * @param status  the new status of the contact
+     * @param chat       the chat that this update regards
+     * @param contactJid the contact that this update regards
+     * @param status     the new status of the contact
      */
-    default void onContactPresence(Chat chat, Contact contact, ContactStatus status) {
+    default void onContactPresence(Chat chat, ContactJid contactJid, ContactStatus status) {
     }
 
     /**
@@ -652,6 +652,27 @@ public interface Listener {
      * @param devices  the non-null devices
      */
     default void onLinkedDevices(Collection<ContactJid> devices){
+
+    }
+
+    /**
+     * Called when an OTP is requested from a new device
+     * Only works on the mobile API
+     *
+     * @param code the registration code
+     */
+    default void onRegistrationCode(long code){
+
+    }
+
+    /**
+     * Called when an OTP is requested from a new device
+     * Only works on the mobile API
+     *
+     * @param whatsapp an instance to the calling api
+     * @param code the registration code
+     */
+    default void onRegistrationCode(Whatsapp whatsapp, long code){
 
     }
 }
