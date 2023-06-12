@@ -4,8 +4,8 @@ import it.auties.whatsapp.api.DisconnectReason;
 import it.auties.whatsapp.api.ErrorHandler.Location;
 import it.auties.whatsapp.api.SocketEvent;
 import it.auties.whatsapp.api.Whatsapp;
-import it.auties.whatsapp.binary.Decoder;
-import it.auties.whatsapp.binary.PatchType;
+import it.auties.whatsapp.binary.BinaryDecoder;
+import it.auties.whatsapp.binary.BinaryPatchType;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.crypto.AesGmc;
@@ -61,6 +61,7 @@ import static it.auties.whatsapp.api.ErrorHandler.Location.*;
 public class SocketHandler implements SocketListener {
     private static final Set<UUID> connectedUuids = ConcurrentHashMap.newKeySet();
     private static final Set<Long> connectedPhoneNumbers = ConcurrentHashMap.newKeySet();
+    private static final Set<String> connectedAlias = ConcurrentHashMap.newKeySet();
 
     private SocketSession session;
 
@@ -107,6 +108,10 @@ public class SocketHandler implements SocketListener {
 
     public static boolean isConnected(long phoneNumber){
         return connectedPhoneNumbers.contains(phoneNumber);
+    }
+
+    public static boolean isConnected(@NonNull String id){
+        return connectedAlias.contains(id);
     }
 
     public SocketHandler(@NonNull Whatsapp whatsapp, @NonNull Store store, @NonNull Keys keys) {
@@ -169,6 +174,7 @@ public class SocketHandler implements SocketListener {
         store.phoneNumber()
                 .map(PhoneNumber::number)
                 .ifPresent(connectedPhoneNumbers::add);
+        connectedAlias.addAll(store.alias());
     }
 
     @Override
@@ -182,9 +188,9 @@ public class SocketHandler implements SocketListener {
         if(keys.readKey() == null){
             return;
         }
-        var plainText = AesGmc.decrypt(keys.readCounter(true), message, keys.readKey().toByteArray());
-        var decoder = new Decoder();
-        var node = decoder.readNode(plainText);
+        var plainText = AesGmc.decrypt(keys.readCounter(true), message, keys.readKey());
+        var decoder = new BinaryDecoder();
+        var node = decoder.decode(plainText);
         onNodeReceived(node);
         store.resolvePendingRequest(node, false);
         streamHandler.digest(node);
@@ -209,11 +215,6 @@ public class SocketHandler implements SocketListener {
 
     @Override
     public void onError(Throwable throwable) {
-        if (throwable instanceof IllegalStateException stateException && stateException.getMessage()
-                .equals("The connection has been closed.")) {
-            onClose();
-            return;
-        }
         onSocketEvent(SocketEvent.ERROR);
         handleFailure(UNKNOWN, throwable);
     }
@@ -301,7 +302,7 @@ public class SocketHandler implements SocketListener {
         return appStateHandler.push(jid, requests);
     }
 
-    public void pullPatch(PatchType... patchTypes) {
+    public void pullPatch(BinaryPatchType... patchTypes) {
         appStateHandler.pull(patchTypes);
     }
 
@@ -361,7 +362,7 @@ public class SocketHandler implements SocketListener {
             return CompletableFuture.completedFuture(null);
         }
 
-        var request = node.toRequest(store::nextTag, null);
+        var request = node.toRequest(null);
         return request.sendWithNoResponse(session, keys, store)
                 .exceptionallyAsync(throwable -> handleFailure(STREAM, throwable))
                 .thenRunAsync(() -> onNodeSent(node));
@@ -384,7 +385,7 @@ public class SocketHandler implements SocketListener {
         var query = Node.ofChildren("query", queryNode);
         var list = Node.ofChildren("list", queryBody);
         var sync = Node.ofChildren("usync",
-                Map.of("sid", store.nextTag(), "mode", "query", "last", "true", "index", "0", "context", "interactive"),
+                Map.of("sid", UUID.randomUUID().toString(), "mode", "query", "last", "true", "index", "0", "context", "interactive"),
                 query, list);
         return sendQuery("get", "usync", sync).thenApplyAsync(this::parseQueryResult);
     }
@@ -429,7 +430,7 @@ public class SocketHandler implements SocketListener {
         if (state() == SocketState.RESTORE) {
             return CompletableFuture.completedFuture(node);
         }
-        var request = node.toRequest(store::nextTag, filter);
+        var request = node.toRequest(filter);
         var result = request.send(session, keys, store);
         onNodeSent(node);
         return result;
@@ -531,21 +532,17 @@ public class SocketHandler implements SocketListener {
                 .toList();
     }
 
-    protected void sendMessageAck(Node node, Map<String, Object> metadata) {
-        var to = node.attributes()
-                .getJid("from")
-                .orElseThrow(() -> new NoSuchElementException("Missing from in message ack"));
-        var participant = node.attributes().getNullableString("participant");
-        var recipient = node.attributes().getNullableString("recipient");
-        var type = node.attributes()
-                .getOptionalString("type")
+    protected void sendMessageAck(Node node) {
+        var attrs = node.attributes();
+        var type = attrs.getOptionalString("type")
+                .filter(entry -> !Objects.equals(entry, "message"))
                 .orElse(null);
         var attributes = Attributes.of()
                 .put("id", node.id())
-                .put("to", to)
+                .put("to", node.attributes().getRequiredString("from"))
                 .put("class", node.description())
-                .put("participant", participant, Objects::nonNull)
-                .put("recipient", recipient, Objects::nonNull)
+                .put("participant", attrs.getNullableString("participant"), Objects::nonNull)
+                .put("recipient", attrs.getNullableString("recipient"), Objects::nonNull)
                 .put("type", type, Objects::nonNull)
                 .toMap();
         sendWithNoResponse(Node.ofAttributes("ack", attributes));
@@ -773,7 +770,6 @@ public class SocketHandler implements SocketListener {
         store().name(newName);
     }
 
-
     private void onUserNameChange(String newName, String oldName) {
         callListenersAsync(listener -> {
             listener.onUserNameChange(whatsapp, oldName, newName);
@@ -863,7 +859,7 @@ public class SocketHandler implements SocketListener {
     }
 
     public CompletableFuture<Void> queryCompanionDevices() {
-        return messageHandler.getDevices(List.of(store.jid().toWhatsappJid()), true, false)
+        return messageHandler.getDevices(List.of(store.jid().toWhatsappJid()), true)
                 .thenCompose(values -> messageHandler.querySessions(values, false));
     }
 

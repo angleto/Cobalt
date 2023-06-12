@@ -1,6 +1,5 @@
 package it.auties.whatsapp.util;
 
-import it.auties.bytes.Bytes;
 import it.auties.curve25519.Curve25519;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
@@ -80,8 +79,10 @@ public class RegistrationHelper {
         store.serialize(true);
     }
 
+    @SuppressWarnings("unchecked")
     private CompletableFuture<Void> sendVerificationCode(Store store, Keys keys, String code) {
-        return getRegistrationOptions(store, keys, Map.entry("code", code.replaceAll("-", "")))
+        Entry<String, Object>[] data = code != null ? new Entry[]{Map.entry("code", code.replaceAll("-", "").trim())} : new Entry[0];
+        return getRegistrationOptions(store, keys, data)
                 .thenComposeAsync(attrs -> sendRegistrationRequest(store, "/register", attrs))
                 .thenAcceptAsync(RegistrationHelper::checkResponse);
     }
@@ -103,7 +104,7 @@ public class RegistrationHelper {
         var keypair = SignalKeyPair.random();
         var key = Curve25519.sharedKey(Whatsapp.REGISTRATION_PUBLIC_KEY, keypair.privateKey());
         var buffer = AesGmc.encrypt(new byte[12], encodedParams.getBytes(StandardCharsets.UTF_8), key);
-        var enc = Base64.getUrlEncoder().encodeToString(Bytes.of(keypair.publicKey(), buffer).toByteArray());
+        var enc = Base64.getUrlEncoder().encodeToString(BytesHelper.concat(keypair.publicKey(), buffer));
         var request = HttpRequest.newBuilder()
                 .uri(URI.create("%s%s?ENC=%s".formatted(Whatsapp.MOBILE_REGISTRATION_ENDPOINT, path, enc)))
                 .GET()
@@ -117,17 +118,17 @@ public class RegistrationHelper {
 
     private String getUserAgent(Store store) {
         var osName = getMobileOsName(store);
-        var osVersion = store.osVersion();
-        var manufacturer = store.manufacturer();
-        var model = store.model().replaceAll(" ", "_");
+        var osVersion = store.device().osVersion();
+        var manufacturer = store.device().manufacturer();
+        var model = store.device().model().replaceAll(" ", "_");
         return "WhatsApp/%s %s/%s Device/%s-%s".formatted(store.version(), osName, osVersion, manufacturer, model);
     }
 
     private String getMobileOsName(Store store) {
-        return switch (store.os()) {
+        return switch (store.device().osType()) {
             case ANDROID -> store.business() ? "SMBA" : "Android";
             case IOS -> store.business() ? "SMBI" : "iOS";
-            default -> throw new IllegalStateException("Unsupported mobile os: " + store.os());
+            default -> throw new IllegalStateException("Unsupported mobile os: " + store.device().osType());
         };
     }
 
@@ -142,7 +143,7 @@ public class RegistrationHelper {
 
     @SafeVarargs
     private CompletableFuture<Map<String, Object>> getRegistrationOptions(Store store, Keys keys, Entry<String, Object>... attributes) {
-        return MetadataHelper.getToken(store.phoneNumber().get().numberWithoutPrefix(), store.os(), store.business())
+        return MetadataHelper.getToken(store.phoneNumber().get().numberWithoutPrefix(), store.device().osType(), store.business())
                 .thenApplyAsync(token -> getRegistrationOptions(store, keys, token, attributes));
     }
 

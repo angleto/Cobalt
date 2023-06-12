@@ -1,13 +1,11 @@
 package it.auties.whatsapp.socket;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import it.auties.bytes.Bytes;
 import it.auties.curve25519.Curve25519;
 import it.auties.whatsapp.api.ClientType;
 import it.auties.whatsapp.api.DisconnectReason;
-import it.auties.whatsapp.api.ErrorHandler.Location;
 import it.auties.whatsapp.api.SocketEvent;
-import it.auties.whatsapp.binary.PatchType;
+import it.auties.whatsapp.binary.BinaryPatchType;
 import it.auties.whatsapp.crypto.Hmac;
 import it.auties.whatsapp.exception.HmacValidationException;
 import it.auties.whatsapp.model.business.BusinessVerifiedNameCertificate;
@@ -40,6 +38,7 @@ import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentity;
 import it.auties.whatsapp.model.signal.auth.SignedDeviceIdentityHMAC;
 import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentPlatform;
 import it.auties.whatsapp.model.signal.keypair.SignalPreKeyPair;
+import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.Clock;
 import it.auties.whatsapp.util.Protobuf;
 import it.auties.whatsapp.util.Validate;
@@ -113,7 +112,7 @@ class StreamHandler {
             socketHandler.disconnect(DisconnectReason.LOGGED_OUT);
             return;
         }
-        socketHandler.handleFailure(Location.STREAM, new RuntimeException("Stream error: %s".formatted(node)));
+        socketHandler.disconnect(DisconnectReason.RECONNECTING);
     }
 
     private void digestChatState(Node node) {
@@ -161,11 +160,7 @@ class StreamHandler {
                 .map(messageId -> chat == null ? socketHandler.store().findStatusById(messageId) : socketHandler.store().findMessageById(chat, messageId))
                 .flatMap(Optional::stream)
                 .forEach(message -> digestReceipt(node, chat, message));
-        var attributes = Attributes.of()
-                .put("class", "receipt")
-                .put("type", node.attributes().getNullableString("type"), Objects::nonNull)
-                .toMap();
-        socketHandler.sendMessageAck(node, attributes);
+        socketHandler.sendMessageAck(node);
     }
 
     private void digestReceipt(Node node, Chat chat, MessageInfo message) {
@@ -183,11 +178,9 @@ class StreamHandler {
         message.status(status);
         updateReceipt(status, chat, participant, message);
         socketHandler.onMessageStatus(status, participant, message, chat);
-        if (!Objects.equals(type.orElse(null), "retry")) {
-            return;
+        if (Objects.equals(type.orElse(null), "retry")) {
+            sendMessageRetry(message);
         }
-
-        sendMessageRetry(message);
     }
 
     private void sendMessageRetry(MessageInfo message) {
@@ -237,19 +230,16 @@ class StreamHandler {
         return messageIds;
     }
 
+    // TODO: Dispatch call event
     private void digestCall(Node node) {
         var call = node.children().peekFirst();
         if (call == null) {
             return;
         }
-        socketHandler.sendMessageAck(node, Map.of("class", "call", "type", call.description()));
+        socketHandler.sendMessageAck(node);
     }
 
     private void digestAck(Node node) {
-        var clazz = node.attributes().getString("class");
-        if (!Objects.equals(clazz, "message")) {
-            return;
-        }
         var error = node.attributes().getInt("error");
         var messageId = node.id();
         var from = node.attributes()
@@ -263,20 +253,21 @@ class StreamHandler {
             match.filter(message -> message.status().index() < MessageStatus.SERVER_ACK.index())
                     .ifPresent(message -> message.status(MessageStatus.SERVER_ACK));
         }
-        var receipt = Node.ofAttributes("ack", Map.of("class", "receipt", "id", messageId, "from", from));
-        socketHandler.sendWithNoResponse(receipt);
     }
 
     private void digestNotification(Node node) {
-        socketHandler.sendMessageAck(node, node.attributes().toMap());
-        var type = node.attributes().getString("type", null);
-        switch (type) {
-            case "w:gp2" -> handleGroupNotification(node);
-            case "server_sync" -> handleServerSyncNotification(node);
-            case "account_sync" -> handleAccountSyncNotification(node);
-            case "encrypt" -> handleEncryptNotification(node);
-            case "picture" -> handlePictureNotification(node);
-            case "registration" -> handleRegistrationNotification(node);
+        try {
+            var type = node.attributes().getString("type", null);
+            switch (type) {
+                case "w:gp2" -> handleGroupNotification(node);
+                case "server_sync" -> handleServerSyncNotification(node);
+                case "account_sync" -> handleAccountSyncNotification(node);
+                case "encrypt" -> handleEncryptNotification(node);
+                case "picture" -> handlePictureNotification(node);
+                case "registration" -> handleRegistrationNotification(node);
+            }
+        }finally {
+            socketHandler.sendMessageAck(node);
         }
     }
 
@@ -541,8 +532,8 @@ class StreamHandler {
         var patches = node.findNodes("collection")
                 .stream()
                 .map(entry -> entry.attributes().getRequiredString("name"))
-                .map(PatchType::of)
-                .toArray(PatchType[]::new);
+                .map(BinaryPatchType::of)
+                .toArray(BinaryPatchType[]::new);
         socketHandler.pullPatch(patches);
     }
 
@@ -571,13 +562,6 @@ class StreamHandler {
                     .map(Objects::toString)
                     .collect(Collectors.joining("\n"));
             socketHandler.handleFailure(CRYPTOGRAPHY, new RuntimeException("Detected a bad mac, unresolved nodes:\n%s".formatted(unresolvedNodes)));
-            return;
-        }
-
-        // TODO: This is to fix Node[description=stream:error, content=[Node[description=ack, attributes={id=3EB04EF705C35A660AC5, type=text, class=message}]]]
-        // Should be actually fixed
-        if(node.hasNode("ack")){
-            socketHandler.disconnect(DisconnectReason.RECONNECTING);
             return;
         }
 
@@ -697,15 +681,7 @@ class StreamHandler {
 
     private CompletableFuture<Void> queryInitialInfo() {
         return queryRequiredInfo()
-                .thenComposeAsync(ignored -> CompletableFuture.allOf(updateSelfPresence(), queryLinkedDevices(), queryInitialBlockList(), queryInitialPrivacySettings(), updateUserStatus(false), updateUserPicture(false)));
-    }
-
-    private CompletableFuture<Node> queryLinkedDevices(){
-        if(!socketHandler.store().business()){
-            return CompletableFuture.completedFuture(null);
-        }
-
-        return socketHandler.sendQuery("get", "fb:thrift_iq", Map.of("smax_id", 42), Node.of("linked_accounts"));
+                .thenComposeAsync(ignored -> CompletableFuture.allOf(updateSelfPresence(), queryInitialBlockList(), queryInitialPrivacySettings(), updateUserStatus(false), updateUserPicture(false)));
     }
 
     private CompletableFuture<Void> queryRequiredInfo() {
@@ -726,6 +702,12 @@ class StreamHandler {
                 socketHandler.sendQuery("get", "urn:xmpp:whatsapp:push", Node.ofAttributes("config", Map.of("version", 1)))
                         .exceptionallyAsync(exception -> socketHandler.handleFailure(LOGIN, exception));
                 socketHandler.store().locale(Objects.requireNonNullElse(socketHandler.store().locale(), "en-US"));
+                socketHandler.sendQuery("set", "urn:xmpp:whatsapp:dirty", Node.ofAttributes("clean", Map.of("timestamp", 0, "type", "account_sync")))
+                        .exceptionallyAsync(exception -> socketHandler.handleFailure(LOGIN, exception));
+                if(socketHandler.store().business()){
+                    socketHandler.sendQuery("get", "fb:thrift_iq", Map.of("smax_id", 42), Node.of("linked_accounts"))
+                            .exceptionallyAsync(exception -> socketHandler.handleFailure(LOGIN, exception));
+                }
                 yield requiredFuture;
             }
         };
@@ -759,7 +741,7 @@ class StreamHandler {
             return CompletableFuture.completedFuture(null);
         }
 
-        return socketHandler.sendWithNoResponse(Node.ofAttributes("presence", Map.of("type", "available")))
+        return socketHandler.sendWithNoResponse(Node.ofAttributes("presence", Map.of("name", socketHandler.store().name(), "type", "available")))
                 .thenRun(this::onPresenceUpdated)
                 .exceptionally(exception -> socketHandler.handleFailure(STREAM, exception));
     }
@@ -909,9 +891,10 @@ class StreamHandler {
         var qr = String.join(
                 ",",
                 ref,
-                Bytes.of(socketHandler.keys().noiseKeyPair().publicKey()).toBase64(),
-                Bytes.of(socketHandler.keys().identityKeyPair().publicKey()).toBase64(),
-                Bytes.of(socketHandler.keys().companionKey()).toBase64()
+                Base64.getEncoder().encodeToString(socketHandler.keys().noiseKeyPair().publicKey()),
+                Base64.getEncoder().encodeToString(socketHandler.keys().identityKeyPair().publicKey()),
+                Base64.getEncoder().encodeToString(socketHandler.keys().companionKey()),
+                "1"
         );
         socketHandler.store().qrHandler().accept(qr);
     }
@@ -927,19 +910,21 @@ class StreamHandler {
             return;
         }
         var account = Protobuf.readMessage(advIdentity.details(), SignedDeviceIdentity.class);
-        var message = Bytes.of(ACCOUNT_SIGNATURE_HEADER)
-                .append(account.details())
-                .append(socketHandler.keys().identityKeyPair().publicKey())
-                .toByteArray();
+        var message = BytesHelper.concat(
+                ACCOUNT_SIGNATURE_HEADER,
+                account.details(),
+                socketHandler.keys().identityKeyPair().publicKey()
+        );
         if (!Curve25519.verifySignature(account.accountSignatureKey(), message, account.accountSignature())) {
             socketHandler.handleFailure(LOGIN, new HmacValidationException("message_header"));
             return;
         }
-        var deviceSignatureMessage = Bytes.of(DEVICE_WEB_SIGNATURE_HEADER)
-                .append(account.details())
-                .append(socketHandler.keys().identityKeyPair().publicKey())
-                .append(account.accountSignatureKey())
-                .toByteArray();
+        var deviceSignatureMessage = BytesHelper.concat(
+                DEVICE_WEB_SIGNATURE_HEADER,
+                account.details(),
+                socketHandler.keys().identityKeyPair().publicKey(),
+                account.accountSignatureKey()
+        );
         account.deviceSignature(Curve25519.sign(socketHandler.keys().identityKeyPair().privateKey(), deviceSignatureMessage, true));
         var keyIndex = Protobuf.readMessage(account.details(), DeviceIdentity.class).keyIndex();
         var outgoingDeviceIdentity = Protobuf.writeMessage(new SignedDeviceIdentity(account.details(), null, account.accountSignature(), account.deviceSignature()));
@@ -972,8 +957,8 @@ class StreamHandler {
         var companionOs = container.findNode("platform")
                 .map(entry -> entry.attributes().getNullableString("name"))
                 .map(this::getCompanionOs)
-                .orElse(null);
-        socketHandler.store().companionOs(companionOs);
+                .orElseThrow(() -> new NoSuchElementException("Unknown platform"));
+        socketHandler.store().companionDeviceOs(companionOs);
         socketHandler.store().business(isBusiness);
         socketHandler.store().addContact(Contact.ofJid(socketHandler.store().jid().toWhatsappJid()));
     }

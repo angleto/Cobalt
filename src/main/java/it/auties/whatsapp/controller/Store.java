@@ -1,7 +1,6 @@
 package it.auties.whatsapp.controller;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
-import it.auties.bytes.Bytes;
 import it.auties.whatsapp.api.*;
 import it.auties.whatsapp.crypto.AesGmc;
 import it.auties.whatsapp.crypto.Hkdf;
@@ -9,6 +8,7 @@ import it.auties.whatsapp.listener.Listener;
 import it.auties.whatsapp.model.business.BusinessCategory;
 import it.auties.whatsapp.model.chat.Chat;
 import it.auties.whatsapp.model.chat.ChatEphemeralTimer;
+import it.auties.whatsapp.model.companion.CompanionDevice;
 import it.auties.whatsapp.model.contact.Contact;
 import it.auties.whatsapp.model.contact.ContactJid;
 import it.auties.whatsapp.model.contact.ContactJidProvider;
@@ -76,7 +76,7 @@ public final class Store extends Controller<Store> {
     private Version version;
 
     /**
-     * Whether the session is online for other users
+     * Whether this account is online for other users
      */
     @Getter
     @Setter
@@ -161,7 +161,6 @@ public final class Store extends Controller<Store> {
      * The key here is the index of the device's key
      * The value is the device's companion jid
      */
-    @Getter
     @Setter
     @Default
     private LinkedHashMap<ContactJid, Integer> linkedDevicesKeys = new LinkedHashMap<>();
@@ -201,7 +200,6 @@ public final class Store extends Controller<Store> {
      */
     @NonNull
     @Default
-    @Getter
     @Setter
     private ConcurrentHashMap<String, String> properties = new ConcurrentHashMap<>();
 
@@ -287,7 +285,7 @@ public final class Store extends Controller<Store> {
     @NonNull
     @JsonIgnore
     @Default
-    private String tag = Bytes.ofRandom(1).toHex().toLowerCase(Locale.ROOT);
+    private String tag = HexFormat.of().formatHex(BytesHelper.random(1));
 
     /**
      * The timestamp in seconds for the initialization of this object
@@ -394,92 +392,179 @@ public final class Store extends Controller<Store> {
     private UserAgentReleaseChannel releaseChannel = UserAgentReleaseChannel.RELEASE;
 
     /**
-     * The operating system of this session
+     * Metadata about the device that is being simulated for Whatsapp
      */
     @Getter
     @Setter
     @NonNull
-    private UserAgentPlatform os;
+    private CompanionDevice device;
 
     /**
-     * The operating system of the associated companion
+     * The os of the associated device, available only for the web api
      */
     @Setter
-    private UserAgentPlatform companionOs;
+    private UserAgentPlatform companionDeviceOs;
 
     /**
-     * The operating system's version of this session
-     */
-    @Getter
-    @Setter
-    @NonNull
-    private String osVersion;
-
-    /**
-     * The model of this session
-     */
-    @Getter
-    @Setter
-    @NonNull
-    private String model;
-
-    /**
-     * The manufacturer of this session
-     */
-    @Getter
-    @Setter
-    @NonNull
-    private String manufacturer;
-
-    /**
-     * Returns the store saved in memory or constructs a new clean instance if {@code !required}
+     * Returns the store saved in memory or constructs a new clean instance
      *
      * @param uuid        the uuid of the session to load, can be null
-     * @param phoneNumber the phone number of the session to load, can be null
      * @param clientType  the non-null type of the client
      * @return a non-null store
      */
-    public static Optional<Store> of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType) {
-        return of(uuid, phoneNumber, clientType, false);
+    public static Store of(UUID uuid, @NonNull ClientType clientType) {
+        return of(uuid, clientType, DefaultControllerSerializer.instance());
     }
 
     /**
-     * Returns the store saved in memory or constructs a new clean instance if {@code !required}
+     * Returns the store saved in memory or constructs a new clean instance
      *
      * @param uuid        the uuid of the session to load, can be null
-     * @param phoneNumber the phone number of the session to load, can be null
      * @param clientType  the non-null type of the client
-     * @param required    whether the session needs to exist
+     * @param serializer  the non-null serializer              
      * @return a non-null store
      */
-    public static Optional<Store> of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, boolean required) {
-        return of(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance(), required);
+    public static Store of(UUID uuid, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+        return ofNullable(uuid, clientType, serializer)
+                .orElseGet(() -> random(uuid, null, clientType, serializer));
     }
 
     /**
-     * Returns the store saved in memory or constructs a new clean instance if {@code !required}
+     * Returns the store saved in memory or returns an empty optional
      *
      * @param uuid        the uuid of the session to load, can be null
-     * @param phoneNumber the phone number of the session to load, can be null
+     * @param clientType  the non-null type of the client
+     * @return a non-null store
+     */
+    public static Optional<Store> ofNullable(UUID uuid, @NonNull ClientType clientType) {
+        return ofNullable(uuid, clientType, DefaultControllerSerializer.instance());
+    }
+
+    /**
+     * Returns the store saved in memory or returns an empty optional
+     *
+     * @param uuid        the uuid of the session to load, can be null
      * @param clientType  the non-null type of the client
      * @param serializer  the non-null serializer
-     * @param required    whether the session needs to exist
      * @return a non-null store
      */
-    public static Optional<Store> of(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer, boolean required) {
-        if (uuid == null && phoneNumber == null && required) {
+    public static Optional<Store> ofNullable(UUID uuid, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+        if(uuid == null){
             return Optional.empty();
         }
 
-        var result = phoneNumber == null ? serializer.deserializeStore(clientType, uuid) : serializer.deserializeStore(clientType, phoneNumber);
-        if(required && result.isEmpty()){
-            return Optional.empty();
-        }
+        var store = serializer.deserializeStore(clientType, uuid);
+        store.ifPresent(serializer::attributeStore);
+        return store;
+    }
 
-        var store = result.map(entry -> entry.serializer(serializer))
+    /**
+     * Returns the store saved in memory or constructs a new clean instance
+     *
+     * @param uuid        the uuid of the session to load, can be null
+     * @param phoneNumber the phone number of the session to load
+     * @param clientType  the non-null type of the client
+     * @return a non-null store
+     */
+    public static Store of(UUID uuid, long phoneNumber, @NonNull ClientType clientType) {
+        return of(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance());
+    }
+    
+    /**
+     * Returns the store saved in memory or constructs a new clean instance
+     *
+     * @param uuid        the uuid of the session to load, can be null
+     * @param phoneNumber the phone number of the session to load
+     * @param clientType  the non-null type of the client
+     * @param serializer  the non-null serializer              
+     * @return a non-null store
+     */
+    public static Store of(UUID uuid, long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+        return ofNullable(phoneNumber, clientType, serializer)
                 .orElseGet(() -> random(uuid, phoneNumber, clientType, serializer));
-        serializer.attributeStore(store); // Run async
-        return Optional.of(store);
+    }
+
+    /**
+     * Returns the store saved in memory or returns an empty optional
+     *
+     * @param phoneNumber the phone number of the session to load, can be null
+     * @param clientType  the non-null type of the client
+     * @return a non-null store
+     */
+    public static Optional<Store> ofNullable(Long phoneNumber, @NonNull ClientType clientType) {
+        return ofNullable(phoneNumber, clientType, DefaultControllerSerializer.instance());
+    }
+    
+    /**
+     * Returns the store saved in memory or returns an empty optional
+     *
+     * @param phoneNumber the phone number of the session to load, can be null
+     * @param clientType  the non-null type of the client
+     * @param serializer  the non-null serializer
+     * @return a non-null store
+     */
+    public static Optional<Store> ofNullable(Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+        if(phoneNumber == null){
+            return Optional.empty();
+        }
+        
+        var store = serializer.deserializeStore(clientType, phoneNumber);
+        store.ifPresent(serializer::attributeStore);
+        return store;
+    }
+
+    /**
+     * Returns the store saved in memory or constructs a new clean instance
+     *
+     * @param alias the alias of the session to load, can be null
+     * @param clientType  the non-null type of the client
+     * @return a non-null store
+     */
+    public static Store of(UUID uuid, String alias, @NonNull ClientType clientType) {
+        return of(uuid, alias, clientType, DefaultControllerSerializer.instance());
+    }
+
+    /**
+     * Returns the store saved in memory or constructs a new clean instance
+     *
+     * @param uuid       the uuid of the session to load, can be null
+     * @param alias      the alias of the session to load, can be null
+     * @param clientType the non-null type of the client
+     * @param serializer the non-null serializer
+     * @return a non-null store
+     */
+    public static Store of(UUID uuid, String alias, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+        return ofNullable(alias, clientType, serializer)
+                .orElseGet(() -> random(uuid, null, clientType, serializer, alias));
+    }
+
+    /**
+     * Returns the store saved in memory or returns an empty optional
+     *
+     * @param alias the alias of the session to load, can be null
+     * @param clientType  the non-null type of the client
+     * @return a non-null store
+     */
+    public static Optional<Store> ofNullable(String alias, @NonNull ClientType clientType) {
+        return ofNullable(alias, clientType, DefaultControllerSerializer.instance());
+    }
+
+    /**
+     * Returns the store saved in memory or returns an empty optional
+     *
+     * @param alias the alias of the session to load, can be null
+     * @param clientType  the non-null type of the client
+     * @param serializer  the non-null serializer
+     * @return a non-null store
+     */
+    public static Optional<Store> ofNullable(String alias, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+        if(alias == null){
+            return Optional.empty();
+        }
+
+        var store = serializer.deserializeStore(clientType, alias);
+        store.ifPresent(serializer::attributeStore);
+        return store;
     }
 
     /**
@@ -488,10 +573,11 @@ public final class Store extends Controller<Store> {
      * @param uuid        the uuid of the session to create, can be null
      * @param phoneNumber the phone number of the session to create, can be null
      * @param clientType  the non-null type of the client
+     * @param alias       the alias of the controller
      * @return a non-null store
      */
-    public static Store random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType) {
-        return random(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance());
+    public static Store random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, String... alias) {
+        return random(uuid, phoneNumber, clientType, DefaultControllerSerializer.instance(), alias);
     }
 
     /**
@@ -501,26 +587,29 @@ public final class Store extends Controller<Store> {
      * @param phoneNumber the phone number of the session to create, can be null
      * @param clientType  the non-null type of the client
      * @param serializer  the non-null serializer
+     * @param alias       the alias of the controller
      * @return a non-null store
      */
-    public static Store random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer) {
+    public static Store random(UUID uuid, Long phoneNumber, @NonNull ClientType clientType, @NonNull ControllerSerializer serializer, String... alias) {
         var phone = PhoneNumber.ofNullable(phoneNumber).orElse(null);
-        var os = clientType == ClientType.WEB ? Spec.Whatsapp.DEFAULT_WEB_OS_TYPE : Spec.Whatsapp.DEFAULT_MOBILE_OS_TYPE;
         var result = Store.builder()
+                .alias(Objects.requireNonNullElseGet(Arrays.asList(alias), ArrayList::new))
                 .serializer(serializer)
                 .clientType(clientType)
                 .jid(phone == null ? null : phone.toJid())
                 .phoneNumber(phone)
-                .os(os)
-                .osVersion(clientType == ClientType.WEB ? Spec.Whatsapp.DEFAULT_WEB_OS_VERSION : Spec.Whatsapp.DEFAULT_MOBILE_OS_VERSION)
-                .model(clientType == ClientType.WEB ? Spec.Whatsapp.DEFAULT_WEB_DEVICE_MODEL : Spec.Whatsapp.DEFAULT_MOBILE_DEVICE_MODEL)
-                .manufacturer(clientType == ClientType.WEB ? Spec.Whatsapp.DEFAULT_WEB_DEVICE_MANUFACTURER : Spec.Whatsapp.DEFAULT_MOBILE_DEVICE_MANUFACTURER)
+                .device(getDefaultDevice(clientType))
                 .uuid(Objects.requireNonNullElseGet(uuid, UUID::randomUUID))
                 .build();
-        if(phoneNumber != null){
-            serializer.linkPhoneNumber(result);
-        }
+        serializer.linkMetadata(result);
         return result;
+    }
+
+    private static CompanionDevice getDefaultDevice(ClientType clientType) {
+        return switch (clientType) {
+            case WEB -> CompanionDevice.windows();
+            case MOBILE -> CompanionDevice.ios();
+        };
     }
 
     /**
@@ -965,11 +1054,12 @@ public final class Store extends Controller<Store> {
         pollUpdateMessage.voter(modificationSenderJid);
         var modificationSender = modificationSenderJid.toString().getBytes(StandardCharsets.UTF_8);
         var secretName = pollUpdateMessage.secretName().getBytes(StandardCharsets.UTF_8);
-        var useSecretPayload = Bytes.of(originalPollInfo.id())
-                .append(originalPollSender)
-                .append(modificationSender)
-                .append(secretName)
-                .toByteArray();
+        var useSecretPayload = BytesHelper.concat(
+                originalPollInfo.id().getBytes(StandardCharsets.UTF_8),
+                originalPollSender,
+                modificationSender,
+                secretName
+        );
         var useCaseSecret = Hkdf.extractAndExpand(originalPollMessage.encryptionKey(), useSecretPayload, 32);
         var additionalData = "%s\0%s".formatted(
                 originalPollInfo.id(),
@@ -980,7 +1070,7 @@ public final class Store extends Controller<Store> {
         var pollVoteMessage = Protobuf.readMessage(decrypted, PollUpdateEncryptedOptions.class);
         var selectedOptions = pollVoteMessage.selectedOptions()
                 .stream()
-                .map(sha256 -> originalPollMessage.selectableOptionsHashesMap().get(Bytes.of(sha256).toHex()))
+                .map(sha256 -> originalPollMessage.selectableOptionsHashesMap().get(HexFormat.of().formatHex(sha256)))
                 .filter(Objects::nonNull)
                 .toList();
         originalPollMessage.selectedOptionsMap().put(modificationSenderJid, selectedOptions);
@@ -1030,12 +1120,12 @@ public final class Store extends Controller<Store> {
     }
 
     /**
-     * Returns a request tag
+     * Returns the non-null map of properties received by whatsapp
      *
-     * @return a non-null String
+     * @return an unmodifiable map
      */
-    public String nextTag() {
-        return UUID.randomUUID().toString();
+    public Map<String, String> properties(){
+        return Collections.unmodifiableMap(properties);
     }
 
     /**
@@ -1166,6 +1256,16 @@ public final class Store extends Controller<Store> {
     }
 
     /**
+     * Returns an unmodifiable map that contains every companion associated using Whatsapp web mapped to its key index
+     *
+     * @return an unmodifiable map
+     */
+    public Map<ContactJid, Integer> linkedDevicesKeys(){
+        return Collections.unmodifiableMap(linkedDevicesKeys);
+    }
+
+
+    /**
      * Returns an unmodifiable list that contains the devices associated using Whatsapp web to this session's companion
      *
      * @return an unmodifiable list
@@ -1274,7 +1374,7 @@ public final class Store extends Controller<Store> {
      */
     public Version version(){
         if(version == null){
-            this.version = MetadataHelper.getVersion(os, business).join();
+            this.version = MetadataHelper.getVersion(device.osType(), business).join();
         }
 
         return version;
@@ -1306,13 +1406,13 @@ public final class Store extends Controller<Store> {
     }
 
     /**
-     * Returns the os of the associated companion
-     * Only available on the web api
+     * The os of the associated device
+     * Available only for the web api
      *
      * @return a non-null optional
      */
-    public Optional<UserAgentPlatform> companionOs() {
-        return Optional.ofNullable(companionOs);
+    public Optional<UserAgentPlatform> companionDeviceOs() {
+        return Optional.ofNullable(companionDeviceOs);
     }
 
     /**

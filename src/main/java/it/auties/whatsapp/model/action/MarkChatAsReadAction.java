@@ -1,7 +1,7 @@
 package it.auties.whatsapp.model.action;
 
 import it.auties.protobuf.base.ProtobufProperty;
-import it.auties.whatsapp.binary.PatchType;
+import it.auties.whatsapp.binary.BinaryPatchType;
 import it.auties.whatsapp.model.sync.ActionMessageRangeSync;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -60,7 +60,7 @@ public final class MarkChatAsReadAction implements Action {
      * @return a non-null string
      */
     @Override
-    public int version() {
+    public int actionVersion() {
         return 3;
     }
 
@@ -70,7 +70,7 @@ public final class MarkChatAsReadAction implements Action {
      * @return a non-null string
      */
     @Override
-    public PatchType type() {
+    public BinaryPatchType actionType() {
         return null;
     }
 }

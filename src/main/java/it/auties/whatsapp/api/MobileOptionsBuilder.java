@@ -6,8 +6,8 @@ import it.auties.whatsapp.controller.ControllerSerializer;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.model.business.BusinessCategory;
+import it.auties.whatsapp.model.companion.CompanionDevice;
 import it.auties.whatsapp.model.mobile.RegistrationStatus;
-import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentPlatform;
 import lombok.NonNull;
 
 import java.util.Optional;
@@ -15,86 +15,72 @@ import java.util.UUID;
 
 @SuppressWarnings("unused")
 public final class MobileOptionsBuilder extends OptionsBuilder<MobileOptionsBuilder> {
-    MobileOptionsBuilder(Store store, Keys keys) {
+    private MobileOptionsBuilder(Store store, Keys keys) {
         super(store, keys);
     }
 
-    static Optional<MobileOptionsBuilder> of(UUID connectionUuid, ControllerSerializer serializer, ConnectionType connectionType){
+    static MobileOptionsBuilder of(UUID connectionUuid, ControllerSerializer serializer, ConnectionType connectionType){
         var uuid = getCorrectUuid(connectionUuid, serializer, connectionType, ClientType.MOBILE);
-        var required = connectionType == ConnectionType.KNOWN;
-        var store = Store.of(uuid, null, ClientType.MOBILE, serializer, required);
-        if(required && store.isEmpty()){
-            return Optional.empty();
-        }
-
-        var keys = Keys.of(uuid, null, ClientType.MOBILE, serializer, required);
-        if(required && keys.isEmpty()){
-            return Optional.empty();
-        }
-
-        return Optional.of(new MobileOptionsBuilder(store.get(), keys.get()));
+        var store = Store.of(uuid, ClientType.MOBILE, serializer);
+        var keys = Keys.of(uuid, ClientType.MOBILE, serializer);
+        return new MobileOptionsBuilder(store, keys);
     }
 
-    static Optional<MobileOptionsBuilder> of(long phoneNumber, ControllerSerializer serializer, ConnectionType connectionType){
-        var uuid = getCorrectUuid(null, serializer, connectionType, ClientType.MOBILE);
-        var required = connectionType == ConnectionType.KNOWN;
-        var store = Store.of(uuid, null, ClientType.MOBILE, serializer, required);
-        if(required && store.isEmpty()){
-            return Optional.empty();
-        }
-
-        var keys = Keys.of(uuid, null, ClientType.MOBILE, serializer, required);
-        if(required && keys.isEmpty()){
+    static Optional<MobileOptionsBuilder> ofNullable(UUID connectionUuid, ControllerSerializer serializer, ConnectionType connectionType){
+        var uuid = getCorrectUuid(connectionUuid, serializer, connectionType, ClientType.MOBILE);
+        var store = Store.ofNullable(uuid, ClientType.MOBILE, serializer);
+        var keys = Keys.ofNullable(uuid, ClientType.MOBILE, serializer);
+        if(store.isEmpty() || keys.isEmpty()){
             return Optional.empty();
         }
 
         return Optional.of(new MobileOptionsBuilder(store.get(), keys.get()));
     }
 
-    /**
-     * Set the operating system of the associated companion
-     *
-     * @return the same instance for chaining
-     */
-    public MobileOptionsBuilder osType(@NonNull UserAgentPlatform osType){
-        if(store != null) {
-            store.os(osType);
-        }
-        return this;
+    static MobileOptionsBuilder of(long phoneNumber, ControllerSerializer serializer){
+        var uuid = UUID.randomUUID();
+        var store = Store.of(uuid, phoneNumber, ClientType.MOBILE, serializer);
+        var keys = Keys.of(uuid, phoneNumber, ClientType.MOBILE, serializer);
+        return new MobileOptionsBuilder(store, keys);
     }
 
-    /**
-     * Set the operating system's version of the associated companion
-     *
-     * @return the same instance for chaining
-     */
-    public MobileOptionsBuilder osVersion(@NonNull String osVersion){
-        if(store != null) {
-            store.osVersion(osVersion);
+    static Optional<MobileOptionsBuilder> ofNullable(Long phoneNumber, ControllerSerializer serializer){
+        var store = Store.ofNullable(phoneNumber, ClientType.MOBILE, serializer);
+        var keys = Keys.ofNullable(phoneNumber, ClientType.MOBILE, serializer);
+        if(store.isEmpty() || keys.isEmpty()){
+            return Optional.empty();
         }
-        return this;
+
+        return Optional.of(new MobileOptionsBuilder(store.get(), keys.get()));
     }
 
-    /**
-     * Set the model of the associated companion
-     *
-     * @return the same instance for chaining
-     */
-    public MobileOptionsBuilder model(@NonNull String model){
-        if(store != null) {
-            store.model(model);
-        }
-        return this;
+
+    static MobileOptionsBuilder of(String alias, ControllerSerializer serializer){
+        var uuid = UUID.randomUUID();
+        var store = Store.of(uuid, alias, ClientType.MOBILE, serializer);
+        var keys = Keys.of(uuid, alias, ClientType.MOBILE, serializer);
+        return new MobileOptionsBuilder(store, keys);
     }
 
+    static Optional<MobileOptionsBuilder> ofNullable(String alias, ControllerSerializer serializer){
+        var store = Store.ofNullable(alias, ClientType.MOBILE, serializer);
+        var keys = Keys.ofNullable(alias, ClientType.MOBILE, serializer);
+        if(store.isEmpty() || keys.isEmpty()){
+            return Optional.empty();
+        }
+
+        return Optional.of(new MobileOptionsBuilder(store.get(), keys.get()));
+    }
+
+
     /**
-     * Set the manufacturer of the associated companion
+     * Set the device to emulate
      *
      * @return the same instance for chaining
      */
-    public MobileOptionsBuilder manufacturer(@NonNull String manufacturer){
+    public MobileOptionsBuilder device(@NonNull CompanionDevice device){
         if(store != null) {
-            store.manufacturer(manufacturer);
+            store.device(device);
         }
         return this;
     }

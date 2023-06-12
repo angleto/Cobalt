@@ -11,37 +11,56 @@ import java.util.UUID;
 @SuppressWarnings("unused")
 public final class WebOptionsBuilder extends OptionsBuilder<WebOptionsBuilder> {
     private Whatsapp whatsapp;
-
-    WebOptionsBuilder(Store store, Keys keys) {
+    private WebOptionsBuilder(Store store, Keys keys) {
         super(store, keys);
     }
 
-    static Optional<WebOptionsBuilder> of(UUID connectionUuid, ControllerSerializer serializer, ConnectionType connectionType){
+    static WebOptionsBuilder of(UUID connectionUuid, ControllerSerializer serializer, ConnectionType connectionType){
         var uuid = getCorrectUuid(connectionUuid, serializer, connectionType, ClientType.WEB);
-        var required = connectionType == ConnectionType.KNOWN;
-        var store = Store.of(uuid, null, ClientType.WEB, serializer, required);
-        if(required && store.isEmpty()){
-            return Optional.empty();
-        }
+        var store = Store.of(uuid, ClientType.WEB, serializer);
+        var keys = Keys.of(uuid, ClientType.WEB, serializer);
+        return new WebOptionsBuilder(store, keys);
+    }
 
-        var keys = Keys.of(uuid, null, ClientType.WEB, serializer, required);
-        if(required && keys.isEmpty()){
+    static Optional<WebOptionsBuilder> ofNullable(UUID connectionUuid, ControllerSerializer serializer, ConnectionType connectionType){
+        var uuid = getCorrectUuid(connectionUuid, serializer, connectionType, ClientType.WEB);
+        var store = Store.ofNullable(uuid, ClientType.WEB, serializer);
+        var keys = Keys.ofNullable(uuid, ClientType.WEB, serializer);
+        if(store.isEmpty() || keys.isEmpty()){
             return Optional.empty();
         }
 
         return Optional.of(new WebOptionsBuilder(store.get(), keys.get()));
     }
 
-    static Optional<WebOptionsBuilder> of(long phoneNumber, ControllerSerializer serializer, ConnectionType connectionType){
-        var uuid = getCorrectUuid(null, serializer, connectionType, ClientType.WEB);
-        var required = connectionType == ConnectionType.KNOWN;
-        var store = Store.of(uuid, phoneNumber, ClientType.WEB, serializer, required);
-        if(required && store.isEmpty()){
+    static WebOptionsBuilder of(long phoneNumber, ControllerSerializer serializer){
+        var uuid = UUID.randomUUID();
+        var store = Store.of(uuid, phoneNumber, ClientType.WEB, serializer);
+        var keys = Keys.of(uuid, phoneNumber, ClientType.WEB, serializer);
+        return new WebOptionsBuilder(store, keys);
+    }
+
+    static Optional<WebOptionsBuilder> ofNullable(Long phoneNumber, ControllerSerializer serializer){;
+        var store = Store.ofNullable(phoneNumber, ClientType.WEB, serializer);
+        var keys = Keys.ofNullable(phoneNumber, ClientType.WEB, serializer);
+        if(store.isEmpty() || keys.isEmpty()){
             return Optional.empty();
         }
 
-        var keys = Keys.of(uuid, phoneNumber, ClientType.WEB, serializer, required);
-        if(required && keys.isEmpty()){
+        return Optional.of(new WebOptionsBuilder(store.get(), keys.get()));
+    }
+
+    static WebOptionsBuilder of(String alias, ControllerSerializer serializer){
+        var uuid = UUID.randomUUID();
+        var store = Store.of(uuid, alias, ClientType.WEB, serializer);
+        var keys = Keys.of(uuid, alias, ClientType.WEB, serializer);
+        return new WebOptionsBuilder(store, keys);
+    }
+
+    static Optional<WebOptionsBuilder> ofNullable(String alias, ControllerSerializer serializer){
+        var store = Store.ofNullable(alias, ClientType.WEB, serializer);
+        var keys = Keys.ofNullable(alias, ClientType.WEB, serializer);
+        if(store.isEmpty() || keys.isEmpty()){
             return Optional.empty();
         }
 

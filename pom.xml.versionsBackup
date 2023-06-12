@@ -172,39 +172,34 @@
         <bouncy.castle.version>1.70</bouncy.castle.version>
         <zxing.version>3.5.1</zxing.version>
         <protoc.version>2.0.5</protoc.version>
-        <lombok.version>1.18.28</lombok.version>
-        <junit.version>5.10.0-M1</junit.version>
-        <jna.version>5.13.0</jna.version>
+        <lombok.version>1.18.24</lombok.version>
+        <junit.version>5.9.0</junit.version>
+        <jna.version>5.12.1</jna.version>
         <jackson.version>2.15.2</jackson.version>
-        <jackson.modules.version>2.15.2</jackson.modules.version>
         <jackson.map.version>1.3</jackson.map.version>
         <curve25519.version>1.1</curve25519.version>
-        <classgraph.version>4.8.160</classgraph.version>
+        <bytes.version>1.2</bytes.version>
+        <classgraph.version>4.8.154</classgraph.version>
         <reflection.version>1.2</reflection.version>
-        <caffeine.version>3.1.5</caffeine.version>
+        <caffeine.version>3.1.2</caffeine.version>
         <lazysodium.version>5.1.4</lazysodium.version>
         <linkpreview.version>2.1</linkpreview.version>
         <vcard.version>0.11.3</vcard.version>
         <qr.terminal.version>2.2</qr.terminal.version>
-        <libphonenumber.version>8.13.13</libphonenumber.version>
+        <libphonenumber.version>8.13.7</libphonenumber.version>
         <pdfbox.version>2.0.27</pdfbox.version>
         <poi.version>5.2.3</poi.version>
-        <netty.buffer.version>4.1.93.Final</netty.buffer.version>
-        <sl4j.version>2.0.7</sl4j.version>
-        <log4j.version>2.20.0</log4j.version>
         <delombok.plugin.version>1.18.24.1</delombok.plugin.version>
         <delombok.input>${project.basedir}/src/main/java</delombok.input>
         <delombok.output>${project.build.directory}/delombok</delombok.output>
-        <maven.versions.version>2.15.0</maven.versions.version>
     </properties>
 
     <build>
         <plugins>
-            <!-- Dependencies version updater -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>versions-maven-plugin</artifactId>
-                <version>${maven.versions.version}</version>
+                <version>2.15.0</version>
             </plugin>
 
             <!-- Instrument protobuf classes-->
@@ -323,6 +318,16 @@
             <version>${classgraph.version}</version>
         </dependency>
         <dependency>
+            <groupId>com.github.ben-manes.caffeine</groupId>
+            <artifactId>caffeine</artifactId>
+            <version>${caffeine.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.auties00</groupId>
+            <artifactId>bytes</artifactId>
+            <version>${bytes.version}</version>
+        </dependency>
+        <dependency>
             <groupId>com.github.auties00</groupId>
             <artifactId>link-preview</artifactId>
             <version>${linkpreview.version}</version>
@@ -361,21 +366,6 @@
             <groupId>org.apache.poi</groupId>
             <artifactId>poi-scratchpad</artifactId>
             <version>${poi.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>io.netty</groupId>
-            <artifactId>netty-buffer</artifactId>
-            <version>${netty.buffer.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.apache.logging.log4j</groupId>
-            <artifactId>log4j-core</artifactId>
-            <version>${log4j.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-nop</artifactId>
-            <version>${sl4j.version}</version>
         </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>

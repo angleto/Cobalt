@@ -1,7 +1,7 @@
 package it.auties.whatsapp.model.action;
 
 import it.auties.protobuf.base.ProtobufProperty;
-import it.auties.whatsapp.binary.PatchType;
+import it.auties.whatsapp.binary.BinaryPatchType;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -59,7 +59,7 @@ public final class LabelEditAction implements Action {
      * @return a non-null string
      */
     @Override
-    public int version() {
+    public int actionVersion() {
         return 3;
     }
 
@@ -69,7 +69,7 @@ public final class LabelEditAction implements Action {
      * @return a non-null string
      */
     @Override
-    public PatchType type() {
+    public BinaryPatchType actionType() {
         return null;
     }
 }
