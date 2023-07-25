@@ -12,10 +12,7 @@ import it.auties.whatsapp.model.button.base.ButtonText;
 import it.auties.whatsapp.model.button.misc.ButtonRow;
 import it.auties.whatsapp.model.button.misc.ButtonSection;
 import it.auties.whatsapp.model.button.template.hydrated.*;
-import it.auties.whatsapp.model.chat.Chat;
-import it.auties.whatsapp.model.chat.ChatEphemeralTimer;
-import it.auties.whatsapp.model.chat.ChatMute;
-import it.auties.whatsapp.model.chat.GroupPolicy;
+import it.auties.whatsapp.model.chat.*;
 import it.auties.whatsapp.model.contact.Contact;
 import it.auties.whatsapp.model.contact.ContactCard;
 import it.auties.whatsapp.model.contact.ContactJid;
@@ -35,7 +32,7 @@ import it.auties.whatsapp.model.mobile.VerificationCodeMethod;
 import it.auties.whatsapp.model.poll.PollOption;
 import it.auties.whatsapp.model.privacy.PrivacySettingType;
 import it.auties.whatsapp.model.privacy.PrivacySettingValue;
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.model.sync.HistorySyncMessage;
 import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.Smile;
@@ -88,7 +85,7 @@ public class RunMobileCITest implements Listener {
         }
         loadConfig();
         createLatch();
-        future = api.connectAndAwait();
+        future = api.connectAwaitingLogout();
         latch.await();
     }
 
@@ -103,20 +100,25 @@ public class RunMobileCITest implements Listener {
             api = Whatsapp.mobileBuilder()
                     .lastConnection()
                     .unregistered()
-                    .register(393495089819L, VerificationCodeMethod.CALL, this::onScanCode)
+                    .verificationCodeMethod(VerificationCodeMethod.CALL)
+                    .verificationCodeSupplier(this::onScanCode)
+                    .register(393495089819L)
                     .join()
                     .addListener(this);
             return;
         }
         log("Detected github actions environment");
-        api = Whatsapp.of(loadGithubParameter(GithubActions.STORE_NAME, Store.class), loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class));
-        api.addListener(this);
+        api = Whatsapp.customBuilder()
+                .store(loadGithubParameter(GithubActions.STORE_NAME, Store.class))
+                .keys(loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class))
+                .build()
+                .addListener(this);
     }
 
     private CompletableFuture<String> onScanCode() {
         System.out.println("Enter OTP: ");
         var scanner = new Scanner(System.in);
-        return CompletableFuture.completedFuture(scanner.nextLine().trim());
+        return CompletableFuture.completedFuture(scanner.nextLine());
     }
 
     @SneakyThrows
@@ -410,11 +412,12 @@ public class RunMobileCITest implements Listener {
         if (group == null) {
             testGroupCreation();
         }
-        for (var policy : GroupPolicy.values()) {
-            log("Changing settings to %s...", policy.name());
-            api.changeWhoCanEditInfo(group, policy).join();
-            api.changeWhoCanEditInfo(group, policy).join();
-            log("Changed settings to %s", policy.name());
+        for(var setting : GroupSetting.values()) {
+            for (var policy : SettingPolicy.values()) {
+                log("Changing settings to %s...", policy.name());
+                api.changeGroupSetting(group, setting, policy).join();
+                log("Changed settings to %s", policy.name());
+            }
         }
     }
 

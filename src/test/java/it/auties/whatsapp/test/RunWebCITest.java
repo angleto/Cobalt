@@ -1,8 +1,6 @@
 package it.auties.whatsapp.test;
 
-import it.auties.whatsapp.api.DisconnectReason;
-import it.auties.whatsapp.api.Emoji;
-import it.auties.whatsapp.api.Whatsapp;
+import it.auties.whatsapp.api.*;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
 import it.auties.whatsapp.github.GithubActions;
@@ -12,10 +10,7 @@ import it.auties.whatsapp.model.button.base.ButtonText;
 import it.auties.whatsapp.model.button.misc.ButtonRow;
 import it.auties.whatsapp.model.button.misc.ButtonSection;
 import it.auties.whatsapp.model.button.template.hydrated.*;
-import it.auties.whatsapp.model.chat.Chat;
-import it.auties.whatsapp.model.chat.ChatEphemeralTimer;
-import it.auties.whatsapp.model.chat.ChatMute;
-import it.auties.whatsapp.model.chat.GroupPolicy;
+import it.auties.whatsapp.model.chat.*;
 import it.auties.whatsapp.model.contact.Contact;
 import it.auties.whatsapp.model.contact.ContactCard;
 import it.auties.whatsapp.model.contact.ContactJid;
@@ -33,7 +28,7 @@ import it.auties.whatsapp.model.message.model.MessageCategory;
 import it.auties.whatsapp.model.message.standard.*;
 import it.auties.whatsapp.model.poll.PollOption;
 import it.auties.whatsapp.model.privacy.PrivacySettingType;
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.model.sync.HistorySyncMessage;
 import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.Smile;
@@ -86,7 +81,7 @@ public class RunWebCITest implements Listener {
         }
         loadConfig();
         createLatch();
-        future = api.connectAndAwait();
+        future = api.connectAwaitingLogout();
         latch.await();
     }
 
@@ -100,12 +95,16 @@ public class RunWebCITest implements Listener {
             }
             api = Whatsapp.webBuilder()
                     .lastConnection()
-                    .build();
+                    .unregistered(QrHandler.toTerminal());
             api.addListener(this);
             return;
         }
         log("Detected github actions environment");
-        api = Whatsapp.of(loadGithubParameter(GithubActions.STORE_NAME, Store.class), loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class));
+        api = Whatsapp.customBuilder()
+                .store(loadGithubParameter(GithubActions.STORE_NAME, Store.class))
+                .keys(loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class))
+                .webVerificationSupport(QrHandler.toTerminal())
+                .build();
         api.addListener(this);
     }
 
@@ -433,11 +432,12 @@ public class RunWebCITest implements Listener {
         if (group == null) {
             testGroupCreation();
         }
-        for (var policy : GroupPolicy.values()) {
-            log("Changing settings to %s...", policy.name());
-            api.changeWhoCanEditInfo(group, policy).join();
-            api.changeWhoCanEditInfo(group, policy).join();
-            log("Changed settings to %s", policy.name());
+        for(var setting : GroupSetting.values()) {
+            for (var policy : SettingPolicy.values()) {
+                log("Changing settings to %s...", policy.name());
+                api.changeGroupSetting(group, setting, policy).join();
+                log("Changed settings to %s", policy.name());
+            }
         }
     }
 

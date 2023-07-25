@@ -10,7 +10,7 @@ import java.util.function.Supplier;
  */
 public interface AsyncVerificationCodeSupplier extends Supplier<CompletableFuture<String>> {
     /**
-     * Creates an asynchronous supplier from a syncronous one
+     * Creates an asynchronous supplier from a synchronous one
      *
      * @param supplier a non-null supplier
      * @return a non-null async supplier

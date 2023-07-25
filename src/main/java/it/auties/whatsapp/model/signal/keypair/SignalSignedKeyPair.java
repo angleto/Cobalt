@@ -1,7 +1,7 @@
 package it.auties.whatsapp.model.signal.keypair;
 
 import it.auties.curve25519.Curve25519;
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.util.BytesHelper;
 import lombok.NonNull;
 
@@ -37,7 +37,7 @@ public record SignalSignedKeyPair(int id, @NonNull SignalKeyPair keyPair, byte[]
     }
 
     public Node toNode() {
-        return Node.ofChildren("skey", Node.of("id", encodedId()), Node.of("value", publicKey()), Node.of("signature", signature()));
+        return Node.of("skey", Node.of("id", encodedId()), Node.of("value", publicKey()), Node.of("signature", signature()));
     }
 
     @Override

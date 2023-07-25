@@ -1,6 +1,7 @@
 package it.auties.whatsapp.test;
 
 import it.auties.whatsapp.api.DisconnectReason;
+import it.auties.whatsapp.api.QrHandler;
 import it.auties.whatsapp.api.WebHistoryLength;
 import it.auties.whatsapp.api.Whatsapp;
 import it.auties.whatsapp.controller.Keys;
@@ -23,7 +24,7 @@ import it.auties.whatsapp.model.message.button.*;
 import it.auties.whatsapp.model.message.model.MessageContainer;
 import it.auties.whatsapp.model.message.model.MessageKey;
 import it.auties.whatsapp.model.message.standard.TextMessage;
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.util.Json;
 import it.auties.whatsapp.utils.ConfigUtils;
 import it.auties.whatsapp.util.Smile;
@@ -68,7 +69,7 @@ public class ButtonsTest implements Listener {
             return;
         }
         loadConfig();
-        future = api.connectAndAwait();
+        future = api.connectAwaitingLogout();
         latch.await();
     }
 
@@ -83,15 +84,18 @@ public class ButtonsTest implements Listener {
             api = Whatsapp.webBuilder()
                     .lastConnection()
                     .historyLength(WebHistoryLength.ZERO)
-                    .build()
+                    .unregistered(QrHandler.toTerminal())
                     .addListener(this)
                     .connect()
                     .join();
             return;
         }
         log("Detected github actions environment");
-        api = Whatsapp.of(loadGithubParameter(GithubActions.STORE_NAME, Store.class), loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class));
-        api.addListener(this);
+        api = Whatsapp.customBuilder()
+                .store(loadGithubParameter(GithubActions.STORE_NAME, Store.class))
+                .keys(loadGithubParameter(GithubActions.CREDENTIALS_NAME, Keys.class))
+                .build()
+                .addListener(this);
     }
 
     @SneakyThrows

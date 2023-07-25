@@ -15,11 +15,16 @@ import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.Executor;
 
-@AllArgsConstructor(access = AccessLevel.PACKAGE)
 @SuppressWarnings("unused")
 public sealed class OptionsBuilder<T extends OptionsBuilder<T>> permits MobileOptionsBuilder, WebOptionsBuilder {
     protected Store store;
     protected Keys keys;
+    protected ErrorHandler errorHandler;
+    protected Executor socketExecutor;
+    protected OptionsBuilder(Store store, Keys keys){
+        this.store = store;
+        this.keys = keys;
+    }
 
     protected static UUID getCorrectUuid(UUID uuid, ControllerSerializer serializer, ConnectionType connectionType, ClientType clientType) {
         return switch (connectionType){
@@ -95,9 +100,7 @@ public sealed class OptionsBuilder<T extends OptionsBuilder<T>> permits MobileOp
      */
     @SuppressWarnings("unchecked")
     public T errorHandler(@NonNull ErrorHandler errorHandler) {
-        if(store != null) {
-            store.errorHandler(errorHandler);
-        }
+        this.errorHandler = errorHandler;
         return (T) this;
     }
 
@@ -109,9 +112,7 @@ public sealed class OptionsBuilder<T extends OptionsBuilder<T>> permits MobileOp
      */
     @SuppressWarnings("unchecked")
     public T socketExecutor(@NonNull Executor socketExecutor) {
-        if(store != null) {
-            store.socketExecutor(socketExecutor);
-        }
+        this.socketExecutor = socketExecutor;
         return (T) this;
     }
 
@@ -152,6 +153,18 @@ public sealed class OptionsBuilder<T extends OptionsBuilder<T>> permits MobileOp
         if(store != null) {
             store.automaticPresenceUpdates(acknowledgeMessages);
         }
+        return (T) this;
+    }
+
+    /**
+     * Sets whether the mac of every app state patch should be validated or not
+     * By default, it's set to false
+     *
+     * @return the same instance for chaining
+     */
+    @SuppressWarnings("unchecked")
+    public T checkPatchMacks(boolean checkPatchMacs) {
+        store.checkPatchMacs(checkPatchMacs);
         return (T) this;
     }
 }

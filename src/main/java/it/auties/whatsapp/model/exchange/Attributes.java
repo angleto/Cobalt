@@ -1,5 +1,7 @@
-package it.auties.whatsapp.model.request;
+package it.auties.whatsapp.model.exchange;
 
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonValue;
 import it.auties.whatsapp.model.contact.ContactJid;
 import lombok.NonNull;
 
@@ -20,7 +22,7 @@ import static java.util.Objects.requireNonNull;
  *
  * @param toMap the non-null wrapped map
  */
-public record Attributes(@NonNull ConcurrentHashMap<String, Object> toMap) {
+public record Attributes(@JsonValue @NonNull ConcurrentHashMap<String, Object> toMap) {
     /**
      * Constructs a new map using the non-null provided entries
      *
@@ -28,6 +30,7 @@ public record Attributes(@NonNull ConcurrentHashMap<String, Object> toMap) {
      * @return a new instance of Attributes
      */
     @SafeVarargs
+    @JsonCreator
     public static Attributes of(@NonNull Entry<String, Object>... entries) {
         return ofNullable(ofEntries(entries));
     }
@@ -70,7 +73,7 @@ public record Attributes(@NonNull ConcurrentHashMap<String, Object> toMap) {
      * @param value the nullable value to check against
      * @return a boolean
      */
-    public boolean hasKey(@NonNull String key, String value) {
+    public boolean hasValue(@NonNull String key, String value) {
         return Objects.equals(toMap.get(key), value);
     }
 

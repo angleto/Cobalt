@@ -1,8 +1,14 @@
-package it.auties.whatsapp;
+package it.auties.whatsapp.local;
 
+import it.auties.whatsapp.api.PairingCodeHandler;
+import it.auties.whatsapp.api.QrHandler;
 import it.auties.whatsapp.api.WebHistoryLength;
 import it.auties.whatsapp.api.Whatsapp;
+import it.auties.whatsapp.model.contact.ContactJid;
 import org.junit.jupiter.api.Test;
+
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 // Just used for testing locally
 public class WebTest {
@@ -11,8 +17,11 @@ public class WebTest {
         var whatsapp = Whatsapp.webBuilder()
                 .lastConnection()
                 .historyLength(WebHistoryLength.ZERO)
-                .build()
-                .addLoggedInListener(api -> System.out.printf("Connected: %s%n", api.store().privacySettings()))
+                .unregistered(QrHandler.toTerminal())
+                .addLoggedInListener(api -> {
+                    System.out.printf("Connected: %s%n", api.store().privacySettings());
+                    api.createCommunity("Test", "Something").join();
+                })
                 .addNewMessageListener((api, message, offline) -> System.out.println(message.toJson()))
                 .addContactsListener((api, contacts) -> System.out.printf("Contacts: %s%n", contacts.size()))
                 .addChatsListener(chats -> System.out.printf("Chats: %s%n", chats.size()))

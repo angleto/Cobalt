@@ -2,10 +2,11 @@ package it.auties.whatsapp.controller;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import it.auties.whatsapp.api.*;
-import it.auties.whatsapp.crypto.AesGmc;
+import it.auties.whatsapp.crypto.AesGcm;
 import it.auties.whatsapp.crypto.Hkdf;
 import it.auties.whatsapp.listener.Listener;
 import it.auties.whatsapp.model.business.BusinessCategory;
+import it.auties.whatsapp.model.call.Call;
 import it.auties.whatsapp.model.chat.Chat;
 import it.auties.whatsapp.model.chat.ChatEphemeralTimer;
 import it.auties.whatsapp.model.companion.CompanionDevice;
@@ -26,9 +27,9 @@ import it.auties.whatsapp.model.poll.PollUpdate;
 import it.auties.whatsapp.model.poll.PollUpdateEncryptedOptions;
 import it.auties.whatsapp.model.privacy.PrivacySettingEntry;
 import it.auties.whatsapp.model.privacy.PrivacySettingType;
-import it.auties.whatsapp.model.request.Node;
-import it.auties.whatsapp.model.request.ReplyHandler;
-import it.auties.whatsapp.model.request.Request;
+import it.auties.whatsapp.model.exchange.Node;
+import it.auties.whatsapp.model.exchange.ReplyHandler;
+import it.auties.whatsapp.socket.Request;
 import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentPlatform;
 import it.auties.whatsapp.model.signal.auth.UserAgent.UserAgentReleaseChannel;
 import it.auties.whatsapp.model.signal.auth.Version;
@@ -60,11 +61,6 @@ import java.util.stream.Stream;
 @Accessors(fluent = true, chain = true)
 @SuppressWarnings({"unused", "UnusedReturnValue"})
 public final class Store extends Controller<Store> {
-    /**
-     * The default executor
-     */
-    private static final Executor DEFAULT_EXECUTOR = ForkJoinPool.getCommonPoolParallelism() > 1 ? ForkJoinPool.commonPool() : runnable -> new Thread(runnable).start();
-
     /**
      * The version used by this session
      */
@@ -117,13 +113,13 @@ public final class Store extends Controller<Store> {
      * The longitude of this account's location, if it's a business account
      */
     @Setter
-    private Long businessLongitude;
+    private Double businessLongitude;
 
     /**
      * The latitude of this account's location, if it's a business account
      */
     @Setter
-    private Long businessLatitude;
+    private Double businessLatitude;
 
     /**
      * The description of this account, if it's a business account
@@ -233,12 +229,11 @@ public final class Store extends Controller<Store> {
     private ConcurrentHashMap<PrivacySettingType, PrivacySettingEntry> privacySettings = new ConcurrentHashMap<>();
 
     /**
-     * Whether this store has already received the snapshot from Whatsapp Web containing chats and
-     * contacts
+     * The non-null map of calls
      */
-    @Getter
-    @Setter
-    private boolean initialSync;
+    @NonNull
+    @Default
+    private ConcurrentHashMap<String, Call> calls = new ConcurrentHashMap<>();
 
     /**
      * Whether chats should be unarchived if a new message arrives
@@ -334,36 +329,6 @@ public final class Store extends Controller<Store> {
     private WebHistoryLength historyLength = WebHistoryLength.STANDARD;
 
     /**
-     * The handler to use when printing out the qr coe
-     */
-    @Getter
-    @Setter
-    @Default
-    @NonNull
-    @JsonIgnore
-    private QrHandler qrHandler = QrHandler.toTerminal();
-
-    /**
-     * The handler for errors
-     */
-    @Getter
-    @Setter
-    @Default
-    @NonNull
-    @JsonIgnore
-    private ErrorHandler errorHandler = ErrorHandler.toTerminal();
-
-    /**
-     * The executor to use for the socket
-     */
-    @Getter
-    @Setter
-    @Default
-    @NonNull
-    @JsonIgnore
-    private Executor socketExecutor = DEFAULT_EXECUTOR;
-
-    /**
      * Whether listeners should be automatically scanned and registered or not
      */
     @Getter
@@ -404,6 +369,14 @@ public final class Store extends Controller<Store> {
      */
     @Setter
     private UserAgentPlatform companionDeviceOs;
+
+    /**
+     * Whether the mac of every app state request should be checked
+     */
+    @Getter
+    @Setter
+    @Default
+    private boolean checkPatchMacs = false;
 
     /**
      * Returns the store saved in memory or constructs a new clean instance
@@ -608,7 +581,7 @@ public final class Store extends Controller<Store> {
     private static CompanionDevice getDefaultDevice(ClientType clientType) {
         return switch (clientType) {
             case WEB -> CompanionDevice.windows();
-            case MOBILE -> CompanionDevice.ios();
+            case MOBILE -> CompanionDevice.android();
         };
     }
 
@@ -1066,7 +1039,7 @@ public final class Store extends Controller<Store> {
                 modificationSenderJid
         );
         var metadata = pollUpdateMessage.encryptedMetadata();
-        var decrypted = AesGmc.decrypt(metadata.iv(), metadata.payload(), useCaseSecret, additionalData.getBytes(StandardCharsets.UTF_8));
+        var decrypted = AesGcm.decrypt(metadata.iv(), metadata.payload(), useCaseSecret, additionalData.getBytes(StandardCharsets.UTF_8));
         var pollVoteMessage = Protobuf.readMessage(decrypted, PollUpdateEncryptedOptions.class);
         var selectedOptions = pollVoteMessage.selectedOptions()
                 .stream()
@@ -1429,7 +1402,7 @@ public final class Store extends Controller<Store> {
      *
      * @return an optional
      */
-    public Optional<Long> businessLongitude(){
+    public Optional<Double> businessLongitude(){
         return Optional.ofNullable(businessLongitude);
     }
 
@@ -1438,7 +1411,7 @@ public final class Store extends Controller<Store> {
      *
      * @return an optional
      */
-    public Optional<Long> businessLatitude(){
+    public Optional<Double> businessLatitude(){
         return Optional.ofNullable(businessLatitude);
     }
 
@@ -1487,6 +1460,26 @@ public final class Store extends Controller<Store> {
     @Override
     public void serialize(boolean async) {
         serializer.serializeStore(this, async);
+    }
+
+    /**
+     * Adds a call to the store
+     *
+     * @param call a non-null call
+     * @return the old value associated with {@link Call#id()}
+     */
+    public Optional<Call> addCall(@NonNull Call call) {
+        return Optional.ofNullable(calls.put(call.id(), call));
+    }
+
+    /**
+     * Finds a call by id
+     *
+     * @param callId the id of the call, can be null
+     * @return an optional
+     */
+    public Optional<Call> findCallById(String callId) {
+        return callId == null ? Optional.empty() : Optional.ofNullable(calls.get(callId));
     }
 
     public static abstract class StoreBuilder<C extends Store, B extends StoreBuilder<C, B>> extends ControllerBuilder<Store, C, B> {

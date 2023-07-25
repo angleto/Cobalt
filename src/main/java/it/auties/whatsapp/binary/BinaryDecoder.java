@@ -2,7 +2,7 @@ package it.auties.whatsapp.binary;
 
 import io.netty.buffer.ByteBuf;
 import it.auties.whatsapp.model.contact.ContactJid;
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.Validate;
 
@@ -41,7 +41,7 @@ public final class BinaryDecoder {
         Validate.isTrue(size != 0, "Cannot decode node with empty body");
         var description = readString();
         var attrs = readAttributes(size);
-        return size % 2 != 0 ? Node.ofAttributes(description, attrs)
+        return size % 2 != 0 ? Node.of(description, attrs)
                 : Node.of(description, attrs, read(false));
     }
 

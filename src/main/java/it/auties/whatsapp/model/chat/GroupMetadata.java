@@ -2,7 +2,7 @@ package it.auties.whatsapp.model.chat;
 
 import it.auties.protobuf.base.ProtobufMessage;
 import it.auties.whatsapp.model.contact.ContactJid;
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.util.Clock;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -67,7 +67,7 @@ public class GroupMetadata implements ProtobufMessage {
     /**
      * The policies that regulate this group
      */
-    @NonNull Map<GroupSetting, GroupPolicy> policies;
+    @NonNull Map<GroupSetting, SettingPolicy> policies;
 
     /**
      * The participants of this group
@@ -101,10 +101,10 @@ public class GroupMetadata implements ProtobufMessage {
         var foundationTimestampSeconds = node.attributes().getLong("creation");
         var foundationTimestamp = subjectTimestampSeconds <= 0 ? ZonedDateTime.now() :Clock.parseSeconds(foundationTimestampSeconds);
         var founder = node.attributes().getJid("creator").orElse(null);
-        var policies = new HashMap<GroupSetting, GroupPolicy>();
-        policies.put(SEND_MESSAGES, GroupPolicy.of(node.hasNode("restrict")));
-        policies.put(EDIT_GROUP_INFO, GroupPolicy.of(node.hasNode("announce")));
-        policies.put(APPROVE_NEW_PARTICIPANTS, GroupPolicy.of(node.hasNode("membership_approval_mode")));
+        var policies = new HashMap<GroupSetting, SettingPolicy>();
+        policies.put(SEND_MESSAGES, SettingPolicy.of(node.hasNode("restrict")));
+        policies.put(EDIT_GROUP_INFO, SettingPolicy.of(node.hasNode("announce")));
+        policies.put(APPROVE_NEW_PARTICIPANTS, SettingPolicy.of(node.hasNode("membership_approval_mode")));
         var description = node.findNode("description")
                 .flatMap(parent -> parent.findNode("body"))
                 .map(GroupMetadata::parseDescription)
@@ -116,7 +116,7 @@ public class GroupMetadata implements ProtobufMessage {
         var community = node.findNode("parent")
                 .isPresent();
         var openCommunity = node.findNode("parent")
-                .filter(entry -> entry.attributes().hasKey("default_membership_approval_mode", "request_required"))
+                .filter(entry -> entry.attributes().hasValue("default_membership_approval_mode", "request_required"))
                 .isEmpty();
         var ephemeral = node.findNode("ephemeral")
                 .map(Node::attributes)

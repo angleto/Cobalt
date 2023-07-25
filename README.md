@@ -19,6 +19,7 @@ It can be used to work with:
 
    This functionality is currently in beta.
    The documentation is expanding, but some functions may still be undocumented. 
+   There is support for both Android and IOS accounts, as well as normal and business accounts.
    Most functions have been reversed engineered, but some may still not work. 
 
 ### Donations
@@ -54,7 +55,7 @@ In short, if you use this library without a malicious intent, you will never get
 <dependency>
     <groupId>com.github.auties00</groupId>
     <artifactId>whatsappweb4j</artifactId>
-    <version>3.4.8</version>
+    <version>3.5.1</version>
 </dependency>
 ```
 
@@ -62,12 +63,12 @@ In short, if you use this library without a malicious intent, you will never get
 
 1. Groovy DSL
    ```groovy
-   implementation 'com.github.auties00:whatsappweb4j:3.4.8'
+   implementation 'com.github.auties00:whatsappweb4j:3.5.1'
    ```
 
 2. Kotlin DSL
    ```kotlin
-   implementation("com.github.auties00:whatsappweb4j:3.4.8")
+   implementation("com.github.auties00:whatsappweb4j:3.5.1")
    ```
 
 ### Examples
@@ -99,40 +100,14 @@ If you are trying to implement a feature that is present on WhatsappWeb's WebCli
 consider using [WhatsappWeb4jRequestAnalyzer](https://github.com/Auties00/whatsappweb4j-request-analyzer), a tool I
 built for this exact purpose.
 
+> **_IMPORTANT:_** Enable "Delegate build actions to Maven" while working on this project or a NoSuchElementException will be thrown
+
 ### Disclaimer about async operations 
 This library heavily depends on async operations using the CompletableFuture construct.
 Remember to handle them as your application will terminate without doing anything if the main thread is not executing any task.
 Please do not open redundant issues on GitHub because of this.
 
 ### How to create a connection
-Here are two examples:
-- Web 
-    ```java
-      Whatsapp.webBuilder()
-                .newConnection()
-                .build()
-                .addLoggedInListener(() -> System.out.println("Connected"))
-                .addDisconnectedListener(reason -> System.out.printf("Disconnected: %s%n", reason))
-                .connect()
-                .join();
-    ```
-- Mobile
-    ```java
-      Whatsapp.mobileBuilder()
-                .newConnection()
-                .unregistered()
-                .register(yourPhoneNumber, () -> {
-                   System.out.println("Enter OTP: ");
-                   return new Scanner(System.in).nextLine().trim();
-                })
-                .join()
-                .addLoggedInListener(() -> System.out.println("Connected"))
-                .addDisconnectedListener(reason -> System.out.printf("Disconnected: %s%n", reason))
-                .connect()
-                .join();
-    ```
-
-If you want to understand this code, read the following walkthrough.
 To create a new connection, start by creating a builder with the api you need:
 - Web
     ```java
@@ -151,77 +126,143 @@ Now select the type of connection that you need:
   ```java
   .newConnection(someUuid)
   ```   
+- Retrieve a connection by id if available, otherwise create a new one
+  ```java
+  .newConnection(someUuid)
+  ```
+- Retrieve a connection by phone number if available, otherwise create a new one
+  ```java
+  .newConnection(phoneNumber)
+  ```
+- Retrieve a connection by an alias if available, otherwise create a new one
+  ```java
+  .newConnection(alias)
+  ```
+- Retrieve a connection by id if available, otherwise returns an empty Optional
+  ```java
+  .newOptionalConnection(someUuid)
+  ```
 - Retrieve the first connection that was serialized if available, otherwise create a new one
   ```java
   .firstConnection()
+  ```
+- Retrieve the first connection that was serialized if available, otherwise returns an empty Optional
+  ```java
+  .firstOptionalConnection()
   ```
 - Retrieve the last connection that was serialized if available, otherwise create a new one
   ```java
   .lastConnection()
   ```
-- Retrieve a connection by id if available, otherwise create a new one
+- Retrieve the last connection that was serialized if available, otherwise returns an empty Optional
   ```java
-  .knownConnection(someUuid)
+  .lastOptionalConnection()
   ```
 You can now customize the API with these options:
-- name - The device's name for Whatsapp Web, the push name for Whatsapp's Mobile (Serialized)
+- name - The device's name for Whatsapp Web, the push name for Whatsapp's Mobile
   ```java
   .name("Some Custom Name :)")
   ```
-- version - The version of Whatsapp to use (Serialized)
+- version - The version of Whatsapp to use
   ```java
   .version(new Version("x.xx.xx"))
   ```
-- autodetectListeners - Whether listeners annotated with `@RegisterListener` should automatically be registered (Serialized)
+- autodetectListeners - Whether listeners annotated with `@RegisterListener` should automatically be registered
   ```java
   .autodetectListeners(true)
   ```
-- textPreviewSetting - Whether a media preview should be generated for text messages containing links (Serialized)
+- textPreviewSetting - Whether a media preview should be generated for text messages containing links
   ```java
   .textPreviewSetting(TextPreviewSetting.ENABLED_WITH_INFERENCE)
   ```
-- errorHandler - The error handler to use for this session (Not serialized, specify this every time)
+- checkPatchMacs - Whether patch macs coming from app state pulls should be validated
   ```java
-  .errorHandler(ErrorHandler.toTerminal())
+  .checkPatchMacs(checkPatchMacs)
   ```
-- proxy - The proxy to use for the socket connection (Serialized)
+- proxy - The proxy to use for the socket connection
   ```java
   .proxy(someProxy)
   ```
-- socketExecutor - The custom executor to handle the socket asynchronously (Not serialized, specify this every time)
-  ```java
-  .socketExecutor(someCustomExecutor)
-  ```
-If you are using the web api you can also set these options:
-- historyLength: The amount of messages to sync from the companion device (Serialized)
-  ```java
-  .historyLength(WebHistoryLength.THREE_MONTHS)
-  ```
-Otherwise, if you are using the mobile api, select the registration status of your session:
-- Creates a new session from a registered phone number: this means that the OTP was already sent to Whatsapp
+  
+> **_IMPORTANT:_** All of these options are serialized, so you don't need to specify them again each time.
+
+There are also platform specific options:
+1. Web
+   - historyLength: The amount of messages to sync from the companion device
+     ```java
+     .historyLength(WebHistoryLength.THREE_MONTHS)
+     ```
+2. Mobile
+   - device: the device you want to fake (only Android supports business accounts for now, IOS supports only normal accounts):
+     ```java
+     .device(CompanionDevice.android())
+      ```
+   - business: whether you want to create a business account or a standard one
+      ```java
+      .business(true)
+      ```
+   - businessCategory: the category of your business account
+     ```java
+     .businessCategory(new BusinessCategory(id, name))
+      ```
+   - businessEmail: the email of your business account
+     ```java
+     .businessEmail("email@domanin.com")
+      ```
+   - businessWebsite: the website of your business account
+     ```java
+     .businessWebsite("https://google.com")
+      ```
+   - businessDescription: the description of your business account
+     ```java
+     .businessDescription("A nice description")
+      ```
+   - businessLatitude: the latitude of your business account
+     ```java
+     .businessLatitude(37.386051)
+      ```
+   - businessLongitude: the longitude of your business account
+     ```java
+     .businessLongitude(-122.083855)
+      ```
+   - businessAddress: the address of your business account
+     ```java
+     .businessAddress("1600 Amphitheatre Pkwy, Mountain View")
+      ```
+
+Finally select the registration status of your session:
+- Creates a new registered session: this means that the QR code was already scanned / the OTP was already sent to Whatsapp
   ```java
   .registered()
   ```
-- Creates a new session from an unverified phone number: this means that the OTP was already sent to the companion as an SMS/Call, but that it hasn't been sent to Whatsapp yet
+- Creates a new unregistered session: this means that the QR code wasn't scanned / the OTP wasn't sent to the companion's phone via SMS/Call/OTP
+  
+  If you are using the Web API, you can either register via QR code:
   ```java
-  .unverified()
-  ```
-  Finally, use:
+  .unregistered(QrHandler.toTerminal())
+  ```  
+  or with a pairing code(new feature):
   ```java
-  .verify(this::getOTPLogic)
-  ```
-  to verify the account (this doesn't create a connection to Whatsapp's Socket, it uses the HTTP api)
-- Creates a new session from an unregistered phone number: this means that the OTP wasn't sent to the companion as an SMS/Call and that it wasn't forwarded Whatsapp
+  .unregistered(yourPhoneNumberWithCountryCode, PairingCodeHandler.toTerminal())
+  ```  
+  Otherwise, if you are using the mobile API, you can decide if you want to receive an SMS, a call or an OTP:
   ```java
-  .unregistered()
-  ```
-  Finally, use:
+  .verificationCodeMethod(VerificationCodeMethod.SMS)
+  ```  
+  Then provide a supplier for that verification method:
   ```java
-  .register(phoneNumber, this::getOTPLogic)
+  .verificationCodeSupplier(() -> yourAsyncOrSyncLogic())
+  ``` 
+  If you are using a business account, provide a captcha handler:
+  ```java
+  .verificationCaptchaSupplier(responseData -> yourAsyncOrSyncLogic())
   ```
-  to register the account (this doesn't create a connection to Whatsapp's Socket, it uses the HTTP api)
+  Finally, register:
+  ```java
+  .register(yourPhoneNumberWithCountryCode)
+  ```
 
-Finally, use
+Now you can connect to your session:
   ```java
   .connect()
   ```
@@ -581,6 +622,8 @@ All types of messages supported by Whatsapp are supported by this library:
     ```
 
 - Button
+
+  > **_IMPORTANT:_** This feature is deprecated and doesn't work properly as Whatsapp has some limitations in place: only use it if you know what you are doing
    
    Here is how you create a button:
    ```java
@@ -1081,6 +1124,21 @@ var future = api.unlinkCompanion(companionJid);
 ``` java
 var future = api.unlinkCompanions();
 ```
+
+### 2FA (Mobile api only)
+
+### Enable 2FA
+
+``` java
+var future = api.enable2fa("000000", "mail@domain.com");
+```
+
+### Disable 2FA
+
+``` java
+var future = api.disable2fa();
+```
+
 
 Some methods may not be listed here, all contributions are welcomed to this documentation!
 Some methods may not be supported on the mobile api, please report them so I can fix them.

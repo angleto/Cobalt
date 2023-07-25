@@ -1,6 +1,6 @@
 package it.auties.whatsapp.model.signal.keypair;
 
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.util.KeyHelper;
 import lombok.NonNull;
 
@@ -18,7 +18,7 @@ public record SignalPreKeyPair(int id, byte @NonNull [] publicKey, byte[] privat
 
     @Override
     public Node toNode() {
-        return Node.ofChildren("key", Node.of("id", encodedId()), Node.of("value", publicKey()));
+        return Node.of("key", Node.of("id", encodedId()), Node.of("value", publicKey()));
     }
 
     @Override

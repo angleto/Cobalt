@@ -20,9 +20,9 @@ import it.auties.whatsapp.model.message.server.DeviceSentMessage;
 import it.auties.whatsapp.model.message.server.ProtocolMessage;
 import it.auties.whatsapp.model.message.server.SenderKeyDistributionMessage;
 import it.auties.whatsapp.model.message.standard.*;
-import it.auties.whatsapp.model.request.Attributes;
-import it.auties.whatsapp.model.request.MessageSendRequest;
-import it.auties.whatsapp.model.request.Node;
+import it.auties.whatsapp.model.exchange.Attributes;
+import it.auties.whatsapp.model.exchange.MessageSendRequest;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.model.setting.EphemeralSetting;
 import it.auties.whatsapp.model.signal.keypair.SignalSignedKeyPair;
 import it.auties.whatsapp.model.signal.message.SignalDistributionMessage;
@@ -48,14 +48,12 @@ import static it.auties.whatsapp.model.sync.HistorySync.Type.*;
 import static it.auties.whatsapp.util.Spec.Signal.*;
 
 class MessageHandler {
-    private static final int WEEKS_GROUP_METADATA_SYNC = 2;
     private static final int HISTORY_SYNC_TIMEOUT = 10;
 
     private final SocketHandler socketHandler;
     private final Map<ContactJid, List<PastParticipant>> pastParticipantsQueue;
     private final Set<Chat> historyCache;
     private final Logger logger;
-    private final DeferredTaskRunner deferredTaskRunner;
     private final Set<ContactJid> attributedGroups;
     private final EnumSet<HistorySync.Type> historySyncTypes;
     private ExecutorService executor;
@@ -68,7 +66,6 @@ class MessageHandler {
         this.attributedGroups = ConcurrentHashMap.newKeySet();
         this.logger = System.getLogger("MessageHandler");
         this.historySyncTypes = EnumSet.noneOf(HistorySync.Type.class);
-        this.deferredTaskRunner = new DeferredTaskRunner();
     }
 
     private synchronized ExecutorService getOrCreateMessageService(){
@@ -78,7 +75,6 @@ class MessageHandler {
 
         return executor;
     }
-
 
     protected synchronized CompletableFuture<Void> encode(MessageSendRequest request) {
         var future = new CompletableFuture<Void>();
@@ -118,8 +114,9 @@ class MessageHandler {
         var groupCipher = new GroupCipher(senderName, socketHandler.keys());
         var groupMessage = groupCipher.encrypt(encodedMessage);
         var messageNode = createMessageNode(request, groupMessage);
-        if (request.hasSenderOverride()) {
-            return getGroupRetryDevices(request.overrideSender()).thenComposeAsync(allDevices -> createGroupNodes(request, signalMessage, allDevices, request.force()))
+        if (request.hasRecipientOverride()) {
+            return getDevices(request.recipients(), false)
+                    .thenComposeAsync(allDevices -> createGroupNodes(request, signalMessage, allDevices, request.force()))
                     .thenApplyAsync(preKeys -> createEncodedMessageNode(request, preKeys, messageNode))
                     .thenComposeAsync(socketHandler::send);
         }
@@ -167,15 +164,16 @@ class MessageHandler {
             return List.of(request.info().chatJid());
         }
 
-        if (request.hasSenderOverride()) {
-            return List.of(request.overrideSender());
+        if (request.hasRecipientOverride()) {
+            return request.recipients();
         }
 
         return List.of(sender.toWhatsappJid(), request.info().chatJid());
     }
 
     private boolean isConversation(MessageInfo info) {
-        return info.chatJid().hasServer(Server.WHATSAPP) || info.chatJid().hasServer(Server.USER);
+        return info.chatJid().hasServer(Server.WHATSAPP)
+                || info.chatJid().hasServer(Server.USER);
     }
 
     private Node createEncodedMessageNode(MessageSendRequest request, List<Node> preKeys, Node descriptor) {
@@ -184,7 +182,7 @@ class MessageHandler {
             if (request.peer()) {
                 body.addAll(preKeys);
             } else {
-                body.add(Node.ofChildren("participants", preKeys));
+                body.add(Node.of("participants", preKeys));
             }
         }
 
@@ -207,7 +205,7 @@ class MessageHandler {
                 .put("device_fanout", false, request.info().message().type() == MessageType.BUTTONS)
                 .put("push_priority", "high", isAppStateKeyShare(request))
                 .toMap();
-        return Node.ofChildren("message", attributes, body);
+        return Node.of("message", attributes, body);
     }
 
     private boolean isAppStateKeyShare(MessageSendRequest request) {
@@ -236,9 +234,8 @@ class MessageHandler {
     }
 
     private CompletableFuture<List<Node>> createGroupNodes(MessageSendRequest request, byte[] distributionMessage, List<ContactJid> participants, boolean force) {
-        Validate.isTrue(request.info().chat().isGroup(), "Cannot send group message to non-group");
         var missingParticipants = participants.stream()
-                .filter(participant -> !request.info().chat().participantsPreKeys().contains(participant))
+                .filter(participant -> force || !request.info().chat().participantsPreKeys().contains(participant))
                 .toList();
         if (missingParticipants.isEmpty()) {
             return CompletableFuture.completedFuture(List.of());
@@ -258,13 +255,13 @@ class MessageHandler {
     protected CompletableFuture<Void> querySessions(List<ContactJid> contacts, boolean force) {
         var missingSessions = contacts.stream()
                 .filter(contact -> force || !socketHandler.keys().hasSession(contact.toSignalAddress()))
-                .map(contact -> Node.ofAttributes("user", Map.of("jid", contact)))
+                .map(contact -> Node.of("user", Map.of("jid", contact)))
                 .toList();
         return missingSessions.isEmpty() ? CompletableFuture.completedFuture(null) : querySession(missingSessions);
     }
 
     private CompletableFuture<Void> querySession(List<Node> children){
-        return socketHandler.sendQuery("get", "encrypt", Node.ofChildren("key", children))
+        return socketHandler.sendQuery("get", "encrypt", Node.of("key", children))
                 .thenAcceptAsync(this::parseSessions);
     }
 
@@ -278,11 +275,7 @@ class MessageHandler {
         var cipher = new SessionCipher(contact.toSignalAddress(), socketHandler.keys());
         var encrypted = cipher.encrypt(message);
         var messageNode = createMessageNode(request, encrypted);
-        return peer ? messageNode : Node.ofChildren("to", Map.of("jid", contact), messageNode);
-    }
-
-    private CompletableFuture<List<ContactJid>> getGroupRetryDevices(ContactJid contactJid) {
-        return getDevices(List.of(contactJid), false);
+        return peer ? messageNode : Node.of("to", Map.of("jid", contact), messageNode);
     }
 
     private CompletableFuture<List<ContactJid>> getGroupDevices(GroupMetadata metadata) {
@@ -296,12 +289,12 @@ class MessageHandler {
 
     private CompletableFuture<List<ContactJid>> queryDevices(List<ContactJid> contacts, boolean excludeSelf) {
         var contactNodes = contacts.stream()
-                .map(contact -> Node.ofAttributes("user", Map.of("jid", contact)))
+                .map(contact -> Node.of("user", Map.of("jid", contact)))
                 .toList();
-        var body = Node.ofChildren("usync",
-                Map.of("sid", UUID.randomUUID().toString(), "mode", "query", "last", "true", "index", "0", "context", "message"),
-                Node.ofChildren("query", Node.ofAttributes("devices", Map.of("version", "2"))),
-                Node.ofChildren("list", contactNodes));
+        var body = Node.of("usync",
+                Map.of("sid", MessageKey.randomId(), "mode", "query", "last", "true", "index", "0", "context", "message"),
+                Node.of("query", Node.of("devices", Map.of("version", "2"))),
+                Node.of("list", contactNodes));
         return socketHandler.sendQuery("get", "usync", body)
                 .thenApplyAsync(result -> parseDevices(result, excludeSelf));
     }
@@ -367,7 +360,6 @@ class MessageHandler {
         var key = node.findNode("key")
                 .flatMap(SignalSignedKeyPair::of)
                 .orElse(null);
-        System.out.println("Generating identity for " +  jid);
         var builder = new SessionBuilder(jid.toSignalAddress(), socketHandler.keys());
         builder.createOutgoing(registrationId, identity, signedKey, key);
     }
@@ -402,13 +394,12 @@ class MessageHandler {
                 .map(certificate -> certificate.details().name());
     }
 
-    private Node createMessageNode(MessageSendRequest request, GroupCipher.CipheredMessageResult groupMessage) {
+    private Node createMessageNode(MessageSendRequest request, CipheredMessageResult groupMessage) {
         var mediaType = getMediaType(request.info().message());
         var attributes = Attributes.of()
                 .put("v", "2")
                 .put("type", groupMessage.type())
-                .put("mediatype", mediaType, Objects::nonNull)
-                .toMap();
+                .put("mediatype", mediaType, Objects::nonNull);
         return Node.of("enc", attributes, groupMessage.message());
     }
 
@@ -519,14 +510,11 @@ class MessageHandler {
     }
 
     private void sendReceipt(Node infoNode, String id, ContactJid chatJid, ContactJid senderJid, boolean fromMe) {
-        if(fromMe && senderJid == null){
-            senderJid = chatJid;
-        }
-
+        var participant = fromMe && senderJid == null ? chatJid : senderJid;
         var category = infoNode.attributes().getString("category");
         var receiptType = getReceiptType(category, fromMe);
-        socketHandler.sendReceipt(chatJid, senderJid, List.of(id), receiptType);
         socketHandler.sendMessageAck(infoNode);
+        socketHandler.sendReceipt(chatJid, participant, List.of(id), receiptType);
     }
 
     private String getReceiptType(String category, boolean fromMe) {
@@ -652,14 +640,10 @@ class MessageHandler {
     }
 
     private void onAppStateSyncKeyShare(ProtocolMessage protocolMessage) {
-        socketHandler.keys().addAppKeys(socketHandler.store().jid(), protocolMessage.appStateSyncKeyShare().keys());
-        if (socketHandler.store().initialSync()) {
-            return;
-        }
-
+        socketHandler.keys()
+                .addAppKeys(socketHandler.store().jid(), protocolMessage.appStateSyncKeyShare().keys());
         socketHandler.pullInitialPatches()
-                .exceptionallyAsync(throwable -> socketHandler
-                        .handleFailure(UNKNOWN, throwable));
+                .exceptionallyAsync(throwable -> socketHandler.handleFailure(UNKNOWN, throwable));
     }
 
     private void onHistorySyncNotification(MessageInfo info, ProtocolMessage protocolMessage) {
@@ -720,10 +704,7 @@ class MessageHandler {
                 case INITIAL_STATUS_V3 -> handleInitialStatus(history);
                 case PUSH_NAME -> handlePushNames(history);
                 case INITIAL_BOOTSTRAP -> handleInitialBootstrap(history);
-                case RECENT, FULL -> {
-                    deferredTaskRunner.execute();
-                    handleChatsSync(history, false);
-                }
+                case RECENT, FULL -> handleChatsSync(history, false);
                 case NON_BLOCKING_DATA -> handleNonBlockingData(history);
             }
         }finally {
@@ -797,19 +778,9 @@ class MessageHandler {
             if (pastParticipants != null) {
                 chat.addPastParticipants(pastParticipants);
             }
-            if(shouldSyncGroupMetadata(chat)){
-                attributedGroups.add(chat.jid());
-                deferredTaskRunner.schedule(() -> socketHandler.queryGroupMetadata(chat));
-            }
 
             store.addChat(chat);
         }
-    }
-
-    private boolean shouldSyncGroupMetadata(Chat chat) {
-        return chat.isGroup()
-                && !attributedGroups.contains(chat.jid())
-                && chat.timestamp().until(ZonedDateTime.now(), ChronoUnit.WEEKS) < WEEKS_GROUP_METADATA_SYNC;
     }
 
     private void handleNonBlockingData(HistorySync history) {

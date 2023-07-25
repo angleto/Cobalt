@@ -1,11 +1,11 @@
-package it.auties.whatsapp.model.request;
+package it.auties.whatsapp.socket;
 
 import it.auties.protobuf.base.ProtobufMessage;
 import it.auties.whatsapp.binary.BinaryEncoder;
 import it.auties.whatsapp.controller.Keys;
 import it.auties.whatsapp.controller.Store;
-import it.auties.whatsapp.crypto.AesGmc;
-import it.auties.whatsapp.socket.SocketSession;
+import it.auties.whatsapp.crypto.AesGcm;
+import it.auties.whatsapp.model.exchange.Node;
 import it.auties.whatsapp.util.BytesHelper;
 import it.auties.whatsapp.util.Exceptions;
 import it.auties.whatsapp.util.Protobuf;
@@ -110,7 +110,7 @@ public record Request(String id, @NonNull Object body, @NonNull CompletableFutur
         if (keys.writeKey() == null) {
             return body;
         }
-        return AesGmc.encrypt(keys.writeCounter(true), body, keys.writeKey());
+        return AesGcm.encrypt(keys.writeCounter(true), body, keys.writeKey());
     }
 
     private byte[] getBody(Object encodedBody) {
@@ -168,7 +168,7 @@ public record Request(String id, @NonNull Object body, @NonNull CompletableFutur
      */
     public boolean complete(Node response, boolean exceptionally) {
         if (response == null) {
-            future.complete(Node.of("xmlstreamend"));
+            future.complete(null);
             return true;
         }
         if (exceptionally) {

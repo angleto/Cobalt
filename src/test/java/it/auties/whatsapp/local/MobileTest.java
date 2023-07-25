@@ -1,23 +1,33 @@
-package it.auties.whatsapp;
+package it.auties.whatsapp.local;
 
 import it.auties.whatsapp.api.Whatsapp;
+import it.auties.whatsapp.model.contact.ContactJid;
 import it.auties.whatsapp.model.mobile.VerificationCodeMethod;
+import it.auties.whatsapp.model.mobile.VerificationCodeResponse;
 import org.junit.jupiter.api.Test;
 
 import java.util.Scanner;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 public class MobileTest {
     @Test
     public void run() {
         Whatsapp.mobileBuilder()
                 .lastConnection()
+                .business(true)
                 .unregistered()
-                .register(16059009994L, VerificationCodeMethod.SMS ,  MobileTest::onScanCode)
+                .verificationCodeMethod(VerificationCodeMethod.SMS)
+                .verificationCodeSupplier(MobileTest::onScanCode)
+                .verificationCaptchaSupplier(MobileTest::onCaptcha)
+                .register(19176199769L)
                 .join()
                 .addLoggedInListener(api -> {
-                    api.unlinkDevices().join();
-                    api.linkDevice("2@oTI3JSmBc2ZWVdS6MGmDz7h0MErmaOWqJMAP+PG0bSnGJIs31E9Wdft17SEj1sjx3Ye4OlV6L7bV7g==,kVLGobUkIdhMKlW+ss4ZG7PHr3tPNPpT21YM4pzSAgE=,rxCRpPY38BS188pJE73NiVTtGuUHjbNS7q295EHWZHY=,PsezYgJB4eycVv32Yf1LKeRiDrcDF5TML91Q1Wrgjzs=,1").join();
+                    System.out.println("Connected");
+                    var call = api.startCall(ContactJid.of("393495089819")).join();
+                    System.out.println(call);
+                    CompletableFuture.delayedExecutor(5, TimeUnit.SECONDS)
+                            .execute(() -> api.stopCall(call).join());
                 })
                 .addContactsListener((api, contacts) -> System.out.printf("Contacts: %s%n", contacts.size()))
                 .addChatsListener(chats -> System.out.printf("Chats: %s%n", chats.size()))
@@ -29,13 +39,19 @@ public class MobileTest {
                 .addAnyMessageStatusListener((chat, contact, info, status) -> System.out.printf("Message %s in chat %s now has status %s for %s %n", info.id(), info.chatName(), status, contact == null ? null : contact.name()))
                 .addChatMessagesSyncListener((chat, last) -> System.out.printf("%s now has %s messages: %s%n", chat.name(), chat.messages().size(), !last ? "waiting for more" : "done"))
                 .addDisconnectedListener(reason -> System.out.printf("Disconnected: %s%n", reason))
-                .connectAndAwait()
+                .connectAwaitingLogout()
                 .join();
     }
 
     private static CompletableFuture<String> onScanCode() {
         System.out.println("Enter OTP: ");
         var scanner = new Scanner(System.in);
-        return CompletableFuture.completedFuture(scanner.nextLine().trim());
+        return CompletableFuture.completedFuture(scanner.nextLine());
+    }
+
+    private static CompletableFuture<String> onCaptcha(VerificationCodeResponse response) {
+        System.out.println("Enter captcha: ");
+        var scanner = new Scanner(System.in);
+        return CompletableFuture.completedFuture(scanner.nextLine());
     }
 }
